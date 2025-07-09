@@ -11,6 +11,10 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+dependencies = [  # TODO versions
+    "websockets",
+    "pydantic",
+]
 
 [project.urls]
 Homepage = "https://github.com/o11k/simplex-chat-py"
