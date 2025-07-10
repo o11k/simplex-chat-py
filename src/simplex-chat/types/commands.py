@@ -1,4 +1,5 @@
 from typing import Union
+from abc import ABC, abstractmethod
 
 
 ChatCommand = Union[
@@ -306,3 +307,128 @@ ChatCommand = Union[
     # This command should be processed in preCmdHook
     "CustomChatCommand",
 ]
+
+
+class BaseChatCommand(ABC):
+    @abstractmethod
+    def __str__(self) -> str: ...
+
+
+class ShowActiveUser(BaseChatCommand):
+    def __str__(self) -> str: return "/user"
+
+class ListUsers(BaseChatCommand):
+    def __str__(self) -> str: return "/users"
+
+class MuteUser(BaseChatCommand):
+    def __str__(self) -> str: return "/mute user"
+
+class UnmuteUser(BaseChatCommand):
+    def __str__(self) -> str: return "/unmute user"
+
+class CheckChatRunning(BaseChatCommand):
+    def __str__(self) -> str: return "/_check running"
+
+class APIStopChat(BaseChatCommand):
+    def __str__(self) -> str: return "/_stop"
+
+class ResubscribeAllConnections(BaseChatCommand):
+    def __str__(self) -> str: return "/_resubscribe all"
+
+class ExportArchive(BaseChatCommand):
+    def __str__(self) -> str: return "/db export"
+
+class APIDeleteStorage(BaseChatCommand):
+    def __str__(self) -> str: return "/_db delete"
+
+class SlowSQLQueries(BaseChatCommand):
+    def __str__(self) -> str: return "/sql slow"
+
+class UserRead(BaseChatCommand):
+    def __str__(self) -> str: return "/read user"
+
+class APIGetCallInvitations(BaseChatCommand):
+    def __str__(self) -> str: return "/_call get"
+
+class APIGetNetworkStatuses(BaseChatCommand):
+    def __str__(self) -> str: return "/_network_statuses"
+
+class APIGetNtfToken(BaseChatCommand):
+    def __str__(self) -> str: return "/_ntf get"
+
+class APIGetServerOperators(BaseChatCommand):
+    def __str__(self) -> str: return "/_operators"
+
+class APIGetUsageConditions(BaseChatCommand):
+    def __str__(self) -> str: return "/_conditions"
+
+class GetChatItemTTL(BaseChatCommand):
+    def __str__(self) -> str: return "/ttl"
+
+class APIGetNetworkConfig(BaseChatCommand):
+    def __str__(self) -> str: return "/network"
+
+class ReconnectAllServers(BaseChatCommand):
+    def __str__(self) -> str: return "/reconnect"
+
+class Welcome(BaseChatCommand):
+    def __str__(self) -> str: return "/welcome"
+
+class ListContacts(BaseChatCommand):
+    def __str__(self) -> str: return "/contacts"
+
+class DeleteMyAddress(BaseChatCommand):
+    def __str__(self) -> str: return "/delete_address"
+
+class ShowMyAddress(BaseChatCommand):
+    def __str__(self) -> str: return "/show_address"
+
+class ClearNoteFolder(BaseChatCommand):
+    def __str__(self) -> str: return "/clear *"
+
+class ShowProfile(BaseChatCommand):
+    def __str__(self) -> str: return "/profile"
+
+class ShowProfileImage(BaseChatCommand):
+    def __str__(self) -> str: return "/show profile image"
+
+class ListRemoteHosts(BaseChatCommand):
+    def __str__(self) -> str: return "/list remote hosts"
+
+class FindKnownRemoteCtrl(BaseChatCommand):
+    def __str__(self) -> str: return "/find remote ctrl"
+
+class ListRemoteCtrls(BaseChatCommand):
+    def __str__(self) -> str: return "/list remote ctrls"
+
+class StopRemoteCtrl(BaseChatCommand):
+    def __str__(self) -> str: return "/stop remote ctrl"
+
+class QuitChat(BaseChatCommand):
+    def __str__(self) -> str: return "/quit"
+
+class ShowVersion(BaseChatCommand):
+    def __str__(self) -> str: return "/version"
+
+class DebugLocks(BaseChatCommand):
+    def __str__(self) -> str: return "/debug locks"
+
+class ResetAgentServersStats(BaseChatCommand):
+    def __str__(self) -> str: return "/reset servers stats"
+
+class GetAgentSubs(BaseChatCommand):
+    def __str__(self) -> str: return "/get subs"
+
+class GetAgentSubsDetails(BaseChatCommand):
+    def __str__(self) -> str: return "/get subs details"
+
+class GetAgentWorkers(BaseChatCommand):
+    def __str__(self) -> str: return "/get workers"
+
+class GetAgentWorkersDetails(BaseChatCommand):
+    def __str__(self) -> str: return "/get workers details"
+
+class GetAgentQueuesInfo(BaseChatCommand):
+    def __str__(self) -> str: return "/get queues"
+
+# TODO "/delete profile image"
