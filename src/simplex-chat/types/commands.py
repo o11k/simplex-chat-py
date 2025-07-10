@@ -1,5 +1,8 @@
-from typing import Union
+import json
+from typing import Literal, Optional, Union
 from abc import ABC, abstractmethod
+
+from pydantic import BaseModel
 
 
 ChatCommand = Union[
@@ -309,7 +312,25 @@ ChatCommand = Union[
 ]
 
 
-class BaseChatCommand(ABC):
+UserId = int
+# TODO validate UserName
+# must not start with #, @, ', or a character with value <0x20
+# Must EITHER not contain whitespace or commas, OR not contain ' (OR both) (quoting concerns)
+UserName = str
+UserPwd = str
+
+
+def quote_user_name(user_name: UserName) -> str:
+    # TODO address minor difference between Haskell isSpace and python str.isspace
+    if all(not c.isspace() for c in user_name) and "," not in user_name:
+        return user_name
+    elif "'" not in user_name:
+        return "'" + user_name + "'"
+    else:
+        raise ValueError(f"Invalid UserName: {user_name}")
+
+
+class BaseChatCommand(BaseModel, ABC):
     @abstractmethod
     def __str__(self) -> str: ...
 
@@ -319,6 +340,70 @@ class ShowActiveUser(BaseChatCommand):
 
 class ListUsers(BaseChatCommand):
     def __str__(self) -> str: return "/users"
+
+class APISetActiveUser(BaseChatCommand):
+    user_id: UserId
+    user_pwd: Optional[UserPwd]
+
+    def __str__(self) -> str:
+        cmd = f"/_user {self.user_id}"
+        if self.user_pwd is not None:
+            cmd += " " + json.dumps(self.user_pwd)
+        return cmd
+
+class SetAllContactReceipts(BaseChatCommand):
+    state: Literal["on", "off"]
+
+    def __str__(self) -> str:
+        return f"/set receipts all {self.state}"
+
+class SetActiveUser(BaseChatCommand):
+    user_name: UserName
+    user_pwd: Optional[UserPwd]
+
+    def __str__(self) -> str:
+        cmd = f"/user {quote_user_name(self.user_name)}"
+        if self.user_pwd is not None:
+            cmd += " " + json.dumps(self.user_pwd)
+        return cmd
+
+class APIHideUser(BaseChatCommand):
+    user_id: UserId
+    user_pwd: UserPwd
+
+    def __str__(self) -> str:
+        return f"/_hide user {self.user_id} {json.dumps(self.user_pwd)}"
+
+class APIUnhideUser(BaseChatCommand):
+    user_id: UserId
+    user_pwd: UserPwd
+
+    def __str__(self) -> str:
+        return f"/_unhide user {self.user_id} {json.dumps(self.user_pwd)}"
+
+class APIMuteUser(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_mute user {self.user_id}"
+
+class APIUnmuteUser(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_unmute user {self.user_id}"
+
+class HideUser(BaseChatCommand):
+    user_pwd: UserPwd
+
+    def __str__(self) -> str:
+        return f"/hide user {json.dumps(self.user_pwd)}"
+
+class UnhideUser(BaseChatCommand):
+    user_pwd: UserPwd
+
+    def __str__(self) -> str:
+        return f"/unhide user {json.dumps(self.user_pwd)}"
 
 class MuteUser(BaseChatCommand):
     def __str__(self) -> str: return "/mute user"
