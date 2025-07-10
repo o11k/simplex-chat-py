@@ -1,8 +1,14 @@
 import json
-from typing import Literal, Optional, Union
+from typing import Annotated, Literal, Optional, Union
 from abc import ABC, abstractmethod
+import sys
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
+
+if sys.version_info < (3, 13):
+    from deprecated import deprecated
+else:
+    from warnings import deprecated
 
 
 ChatCommand = Union[
@@ -318,6 +324,13 @@ UserId = int
 # Must EITHER not contain whitespace or commas, OR not contain ' (OR both) (quoting concerns)
 UserName = str
 UserPwd = str
+FilePath = str
+ChatTagId = int
+GroupId = int
+# TODO make ChatRef a struct of ChatType and id?
+ChatRef = Annotated[str, StringConstraints(pattern=r"^[@#*:]\d+$")]
+ChatItemId = int
+IncognitoEnabled = bool
 
 
 def quote_user_name(user_name: UserName) -> str:
@@ -329,6 +342,8 @@ def quote_user_name(user_name: UserName) -> str:
     else:
         raise ValueError(f"Invalid UserName: {user_name}")
 
+def to_on_off(b: bool) -> str:
+    return "on" if b else "off"
 
 class BaseChatCommand(BaseModel, ABC):
     @abstractmethod
@@ -352,10 +367,10 @@ class APISetActiveUser(BaseChatCommand):
         return cmd
 
 class SetAllContactReceipts(BaseChatCommand):
-    state: Literal["on", "off"]
+    on_or_off: bool
 
     def __str__(self) -> str:
-        return f"/set receipts all {self.state}"
+        return f"/set receipts all {to_on_off(self.on_or_off)}"
 
 class SetActiveUser(BaseChatCommand):
     user_name: UserName
@@ -411,14 +426,91 @@ class MuteUser(BaseChatCommand):
 class UnmuteUser(BaseChatCommand):
     def __str__(self) -> str: return "/unmute user"
 
+class APIDeleteUser(BaseChatCommand):
+    user_id: UserId
+    delete_smp_queues: bool
+    user_pwd: Optional[UserPwd]
+
+    def __str__(self) -> str:
+        cmd = f"/_delete user {self.user_id} del_smp={to_on_off(self.delete_smp_queues)}"
+        if self.user_pwd is not None:
+            cmd += " " + json.dumps(self.user_pwd)
+        return cmd
+
+class DeleteUser(BaseChatCommand):
+    user_name: UserName
+    # Always true
+    # delete_smp_queues: bool = True
+    user_pwd: Optional[UserPwd]
+
+    def __str__(self) -> str:
+        cmd = f"/delete user {quote_user_name(self.user_name)}"
+        if self.user_pwd is not None:
+            cmd += " " + json.dumps(self.user_pwd)
+        return cmd
+
+class StartChat(BaseChatCommand):
+    main_app: bool
+    enable_snd_files: bool
+
+    def __str__(self) -> str:
+        main = to_on_off(self.main_app)
+        snd_files = to_on_off(self.enable_snd_files)
+        return f"_start main={main} snd_files={snd_files}"
+
 class CheckChatRunning(BaseChatCommand):
     def __str__(self) -> str: return "/_check running"
 
 class APIStopChat(BaseChatCommand):
     def __str__(self) -> str: return "/_stop"
 
+class APIActivateChat(BaseChatCommand):
+    restore_chat: bool
+
+    def __str__(self) -> str:
+        return f"/_app activate restore={to_on_off(self.restore_chat)}"
+
+class APISuspendChat(BaseChatCommand):
+    suspend_timeout: int
+
+    def __str__(self) -> str:
+        return f"/_app suspend {self.suspend_timeout}"
+
 class ResubscribeAllConnections(BaseChatCommand):
     def __str__(self) -> str: return "/_resubscribe all"
+
+@deprecated("Use APISetAppFilePaths instead")
+class SetTempFolder(BaseChatCommand):
+    path: FilePath
+
+    def __str__(self) -> str:
+        return f"/_temp_folder {self.path}"
+
+@deprecated("Use APISetAppFilePaths instead")
+class SetFilesFolder(BaseChatCommand):
+    path: FilePath
+
+    def __str__(self) -> str:
+        return f"/files_folder {self.path}"
+
+@deprecated("Use APISetAppFilePaths instead")
+class SetRemoteHostsFolder(BaseChatCommand):
+    path: FilePath
+
+    def __str__(self) -> str:
+        return f"/remote_hosts_folder {self.path}"
+
+class APISetEncryptLocalFiles(BaseChatCommand):
+    on_or_off: bool
+
+    def __str__(self) -> str:
+        return f"/_files_encrypt {to_on_off(self.on_or_off)}"
+
+class SetContactMergeEnabled(BaseChatCommand):
+    on_or_off: bool
+
+    def __str__(self) -> str:
+        return f"/contact_merge {to_on_off(self.on_or_off)}"
 
 class ExportArchive(BaseChatCommand):
     def __str__(self) -> str: return "/db export"
@@ -429,8 +521,84 @@ class APIDeleteStorage(BaseChatCommand):
 class SlowSQLQueries(BaseChatCommand):
     def __str__(self) -> str: return "/sql slow"
 
+class ExecChatStoreSQL(BaseChatCommand):
+    query: str
+
+    def __str__(self) -> str:
+        return f"/sql chat {self.query}"
+
+class ExecAgentStoreSQL(BaseChatCommand):
+    query: str
+
+    def __str__(self) -> str:
+        return f"/sql agent {self.query}"
+
+class APIGetChatTags(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_get tags {self.user_id}"
+
+class APIGetChatItemInfo(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_item_id: ChatItemId
+
+    def __str__(self) -> str:
+        return f"/_get item info {self.chat_ref} {self.chat_item_id}"
+
+class APIDeleteChatTag(BaseChatCommand):
+    chat_tag_id: ChatTagId
+
+    def __str__(self) -> str:
+        return f"/_delete tag {self.chat_tag_id}"
+
+class APIArchiveReceivedReports(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_archive reports #{self.group_id}"
+
+class APIUserRead(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_read user {self.user_id}"
+
 class UserRead(BaseChatCommand):
     def __str__(self) -> str: return "/read user"
+
+class APIChatRead(BaseChatCommand):
+    chat_ref: ChatRef
+
+    def __str__(self) -> str:
+        return f"/_read chat {self.chat_ref}"
+
+class APIChatUnread(BaseChatCommand):
+    chat_ref: ChatRef
+    on_or_off: bool
+
+    def __str__(self) -> str:
+        return f"/_unread chat {self.chat_ref} {to_on_off(self.on_or_off)}"
+
+class APIClearChat(BaseChatCommand):
+    chat_ref: ChatRef
+
+    def __str__(self) -> str:
+        return f"/_clear chat {self.chat_ref}"
+
+class APIAcceptContact(BaseChatCommand):
+    incognito: IncognitoEnabled
+    conn_req_id: int
+
+    def __str__(self) -> str:
+        return f"/_accept incognito={to_on_off(self.incognito)} {self.conn_req_id}"
+
+class APIRejectContact(BaseChatCommand):
+    incognito: IncognitoEnabled
+    conn_req_id: int
+
+    def __str__(self) -> str:
+        return f"/_reject {self.conn_req_id}"
 
 class APIGetCallInvitations(BaseChatCommand):
     def __str__(self) -> str: return "/_call get"
