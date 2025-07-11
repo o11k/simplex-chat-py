@@ -331,6 +331,17 @@ GroupId = int
 ChatRef = Annotated[str, StringConstraints(pattern=r"^[@#*:]\d+$")]
 ChatItemId = int
 IncognitoEnabled = bool
+ContactId = int
+LocalAlias = str
+GroupMemberRole = Literal["owner", "admin", "moderator", "member", "observer"]
+GroupMemberId = int
+GroupName = str
+ContactName = str
+CreateShortLink = bool
+FileTransferId = int
+ImageData = str
+RemoteHostId = int
+RemoteCtrlId = int
 
 
 def quote_user_name(user_name: UserName) -> str:
@@ -600,23 +611,50 @@ class APIRejectContact(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_reject {self.conn_req_id}"
 
+# APIRejectCall ContactId
+# APIEndCall ContactId
+
 class APIGetCallInvitations(BaseChatCommand):
     def __str__(self) -> str: return "/_call get"
 
 class APIGetNetworkStatuses(BaseChatCommand):
     def __str__(self) -> str: return "/_network_statuses"
 
+# APISetContactAlias ContactId LocalAlias
+# APISetGroupAlias GroupId LocalAlias
+# APISetConnectionAlias Int64 LocalAlias
+
 class APIGetNtfToken(BaseChatCommand):
     def __str__(self) -> str: return "/_ntf get"
+
+# APIGetNtfConns {nonce :: C.CbNonce, encNtfInfo :: ByteString}
+# APIAddMember GroupId ContactId GroupMemberRole
+# APIAcceptMember GroupId GroupMemberId GroupMemberRole
+# APILeaveGroup GroupId
+# APIListMembers GroupId
+# APICreateGroupLink GroupId GroupMemberRole CreateShortLink
+# APIGroupLinkMemberRole GroupId GroupMemberRole
+# APIDeleteGroupLink GroupId
+# APIGetGroupLink GroupId
+# APICreateMemberContact GroupId GroupMemberId
 
 class APIGetServerOperators(BaseChatCommand):
     def __str__(self) -> str: return "/_operators"
 
+# APIGetUserServers UserId
+
 class APIGetUsageConditions(BaseChatCommand):
     def __str__(self) -> str: return "/_conditions"
 
+# APISetConditionsNotified Int64
+# APISetChatItemTTL UserId Int64
+# SetChatItemTTL Int64
+# APIGetChatItemTTL UserId
+
 class GetChatItemTTL(BaseChatCommand):
     def __str__(self) -> str: return "/ttl"
+
+# APISetChatTTL UserId ChatRef (Maybe Int64)
 
 class APIGetNetworkConfig(BaseChatCommand):
     def __str__(self) -> str: return "/network"
@@ -624,38 +662,137 @@ class APIGetNetworkConfig(BaseChatCommand):
 class ReconnectAllServers(BaseChatCommand):
     def __str__(self) -> str: return "/reconnect"
 
+# APIContactInfo ContactId
+# APIGroupInfo GroupId
+# APIGroupMemberInfo GroupId GroupMemberId
+# APIContactQueueInfo ContactId
+# APIGroupMemberQueueInfo GroupId GroupMemberId
+# APISwitchContact ContactId
+# APISwitchGroupMember GroupId GroupMemberId
+# APIAbortSwitchContact ContactId
+# APIAbortSwitchGroupMember GroupId GroupMemberId
+# APISyncContactRatchet ContactId Bool
+# APISyncGroupMemberRatchet GroupId GroupMemberId Bool
+# APIGetContactCode ContactId
+# APIGetGroupMemberCode GroupId GroupMemberId
+# APIVerifyContact ContactId (Maybe Text)
+# APIVerifyGroupMember GroupId GroupMemberId (Maybe Text)
+# APIEnableContact ContactId
+# APIEnableGroupMember GroupId GroupMemberId
+# SetShowMemberMessages GroupName ContactName Bool
+# ContactInfo ContactName
+# ShowGroupInfo GroupName
+# GroupMemberInfo GroupName ContactName
+# ContactQueueInfo ContactName
+# GroupMemberQueueInfo GroupName ContactName
+# SwitchContact ContactName
+# SwitchGroupMember GroupName ContactName
+# AbortSwitchContact ContactName
+# AbortSwitchGroupMember GroupName ContactName
+# SyncContactRatchet ContactName Bool
+# SyncGroupMemberRatchet GroupName ContactName Bool
+# GetContactCode ContactName
+# GetGroupMemberCode GroupName ContactName
+# VerifyContact ContactName (Maybe Text)
+# VerifyGroupMember GroupName ContactName (Maybe Text)
+# EnableContact ContactName
+# EnableGroupMember GroupName ContactName
+# ChatHelp HelpSection
+
 class Welcome(BaseChatCommand):
     def __str__(self) -> str: return "/welcome"
+
+# APIAddContact UserId CreateShortLink IncognitoEnabled
+# AddContact CreateShortLink IncognitoEnabled
+# APISetConnectionIncognito Int64 IncognitoEnabled
+# APIChangeConnectionUser Int64 UserId
+# APIConnectContactViaAddress UserId IncognitoEnabled ContactId
+# ConnectSimplex IncognitoEnabled
+# ClearContact ContactName
+# APIListContacts UserId
 
 class ListContacts(BaseChatCommand):
     def __str__(self) -> str: return "/contacts"
 
+# APICreateMyAddress UserId CreateShortLink
+# CreateMyAddress CreateShortLink
+# APIDeleteMyAddress UserId
+
 class DeleteMyAddress(BaseChatCommand):
     def __str__(self) -> str: return "/delete_address"
+
+# APIShowMyAddress UserId
 
 class ShowMyAddress(BaseChatCommand):
     def __str__(self) -> str: return "/show_address"
 
+# APISetProfileAddress UserId Bool
+# SetProfileAddress Bool
+# AcceptContact IncognitoEnabled ContactName
+# SendMemberContactMessage GroupName ContactName Text
+# DeleteMemberMessage GroupName ContactName Text
+# AddMember GroupName ContactName GroupMemberRole
+# MemberRole GroupName ContactName GroupMemberRole
+# BlockForAll GroupName ContactName Bool
+# LeaveGroup GroupName
+# DeleteGroup GroupName
+# ClearGroup GroupName
+# ListMembers GroupName
+# APIListGroups UserId (Maybe ContactId) (Maybe String)
+# ListGroups (Maybe ContactName) (Maybe String)
+# ShowGroupProfile GroupName
+# UpdateGroupDescription GroupName (Maybe Text)
+# ShowGroupDescription GroupName
+# CreateGroupLink GroupName GroupMemberRole CreateShortLink
+# GroupLinkMemberRole GroupName GroupMemberRole
+# DeleteGroupLink GroupName
+# ShowGroupLink GroupName
+# SendGroupMessageQuote {groupName :: GroupName, contactName_ :: Maybe ContactName, quotedMsg :: Text, message :: Text}
+
 class ClearNoteFolder(BaseChatCommand):
     def __str__(self) -> str: return "/clear *"
+
+# LastChats (Maybe Int)
+# ShowChatItem (Maybe ChatItemId)
+# ShowLiveItems Bool
+# ReceiveFile {fileId :: FileTransferId, userApprovedRelays :: Bool, storeEncrypted :: Maybe Bool, fileInline :: Maybe Bool, filePath :: Maybe FilePath}
+# SetFileToReceive {fileId :: FileTransferId, userApprovedRelays :: Bool, storeEncrypted :: Maybe Bool}
+# CancelFile FileTransferId
+# FileStatus FileTransferId
 
 class ShowProfile(BaseChatCommand):
     def __str__(self) -> str: return "/profile"
 
+# UpdateProfile ContactName Text
+# UpdateProfileImage (Maybe ImageData)
+
 class ShowProfileImage(BaseChatCommand):
     def __str__(self) -> str: return "/show profile image"
+
+# SetUserTimedMessages Bool
+# SetGroupTimedMessages GroupName (Maybe Int)
+# SetLocalDeviceName Text
 
 class ListRemoteHosts(BaseChatCommand):
     def __str__(self) -> str: return "/list remote hosts"
 
+# SwitchRemoteHost (Maybe RemoteHostId)
+# DeleteRemoteHost RemoteHostId
+# StoreRemoteFile {remoteHostId :: RemoteHostId, storeEncrypted :: Maybe Bool, localPath :: FilePath}
+
 class FindKnownRemoteCtrl(BaseChatCommand):
     def __str__(self) -> str: return "/find remote ctrl"
+
+# ConfirmRemoteCtrl RemoteCtrlId
+# VerifyRemoteCtrlSession Text
 
 class ListRemoteCtrls(BaseChatCommand):
     def __str__(self) -> str: return "/list remote ctrls"
 
 class StopRemoteCtrl(BaseChatCommand):
     def __str__(self) -> str: return "/stop remote ctrl"
+
+# DeleteRemoteCtrl RemoteCtrlId
 
 class QuitChat(BaseChatCommand):
     def __str__(self) -> str: return "/quit"
@@ -665,6 +802,9 @@ class ShowVersion(BaseChatCommand):
 
 class DebugLocks(BaseChatCommand):
     def __str__(self) -> str: return "/debug locks"
+
+# GetAgentSubsTotal UserId
+# GetAgentServersSummary UserId
 
 class ResetAgentServersStats(BaseChatCommand):
     def __str__(self) -> str: return "/reset servers stats"
@@ -684,4 +824,4 @@ class GetAgentWorkersDetails(BaseChatCommand):
 class GetAgentQueuesInfo(BaseChatCommand):
     def __str__(self) -> str: return "/get queues"
 
-# TODO "/delete profile image"
+# CustomChatCommand ByteString
