@@ -342,16 +342,18 @@ FileTransferId = int
 ImageData = str
 RemoteHostId = int
 RemoteCtrlId = int
+CbNonce = str
+# Doesn't exist in Haskell
+VerifyCode = Annotated[str, StringConstraints(pattern=r"^[^\d ]$")]
 
-
-def quote_user_name(user_name: UserName) -> str:
+def quote_display_name(name: str) -> str:
     # TODO address minor difference between Haskell isSpace and python str.isspace
-    if all(not c.isspace() for c in user_name) and "," not in user_name:
-        return user_name
-    elif "'" not in user_name:
-        return "'" + user_name + "'"
+    if all(not c.isspace() for c in name) and "," not in name:
+        return name
+    elif "'" not in name:
+        return "'" + name + "'"
     else:
-        raise ValueError(f"Invalid UserName: {user_name}")
+        raise ValueError(f"Invalid UserName: {name}")
 
 def to_on_off(b: bool) -> str:
     return "on" if b else "off"
@@ -388,7 +390,7 @@ class SetActiveUser(BaseChatCommand):
     user_pwd: Optional[UserPwd]
 
     def __str__(self) -> str:
-        cmd = f"/user {quote_user_name(self.user_name)}"
+        cmd = f"/user {quote_display_name(self.user_name)}"
         if self.user_pwd is not None:
             cmd += " " + json.dumps(self.user_pwd)
         return cmd
@@ -455,7 +457,7 @@ class DeleteUser(BaseChatCommand):
     user_pwd: Optional[UserPwd]
 
     def __str__(self) -> str:
-        cmd = f"/delete user {quote_user_name(self.user_name)}"
+        cmd = f"/delete user {quote_display_name(self.user_name)}"
         if self.user_pwd is not None:
             cmd += " " + json.dumps(self.user_pwd)
         return cmd
@@ -611,8 +613,17 @@ class APIRejectContact(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_reject {self.conn_req_id}"
 
-# APIRejectCall ContactId
-# APIEndCall ContactId
+class APIRejectCall(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_call reject @{self.contact_id}"
+
+class APIEndCall(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_call end @{self.contact_id}"
 
 class APIGetCallInvitations(BaseChatCommand):
     def __str__(self) -> str: return "/_call get"
@@ -620,41 +631,150 @@ class APIGetCallInvitations(BaseChatCommand):
 class APIGetNetworkStatuses(BaseChatCommand):
     def __str__(self) -> str: return "/_network_statuses"
 
-# APISetContactAlias ContactId LocalAlias
-# APISetGroupAlias GroupId LocalAlias
-# APISetConnectionAlias Int64 LocalAlias
+class APISetContactAlias(BaseChatCommand):
+    contact_id: ContactId
+    local_alias: LocalAlias
+
+    def __str__(self) -> str:
+        alias_part = (" " + self.local_alias) if self.local_alias else ""
+        return f"/_set alias @{self.contact_id}" + alias_part
+
+class APISetGroupAlias(BaseChatCommand):
+    group_id: GroupId
+    local_alias: LocalAlias
+
+    def __str__(self) -> str:
+        alias_part = (" " + self.local_alias) if self.local_alias else ""
+        return f"/_set alias #{self.group_id}" + alias_part
+
+class APISetConnectionAlias(BaseChatCommand):
+    connection_id: int
+    local_alias: LocalAlias
+
+    def __str__(self) -> str:
+        alias_part = (" " + self.local_alias) if self.local_alias else ""
+        return f"/_set alias :{self.connection_id}" + alias_part
 
 class APIGetNtfToken(BaseChatCommand):
     def __str__(self) -> str: return "/_ntf get"
 
-# APIGetNtfConns {nonce :: C.CbNonce, encNtfInfo :: ByteString}
-# APIAddMember GroupId ContactId GroupMemberRole
-# APIAcceptMember GroupId GroupMemberId GroupMemberRole
-# APILeaveGroup GroupId
-# APIListMembers GroupId
-# APICreateGroupLink GroupId GroupMemberRole CreateShortLink
-# APIGroupLinkMemberRole GroupId GroupMemberRole
-# APIDeleteGroupLink GroupId
-# APIGetGroupLink GroupId
-# APICreateMemberContact GroupId GroupMemberId
+class APIGetNtfConns(BaseChatCommand):
+    nonce: CbNonce
+    enc_ntf_info: str
+
+    def __str__(self) -> str:
+        return f"/_ntf conns {self.nonce} {self.enc_ntf_info}"
+
+class APIAddMember(BaseChatCommand):
+    group_id: GroupId
+    contact_id: ContactId
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        return f"/_add #{self.group_id} {self.contact_id} {self.role}"
+
+class APIAcceptMember(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        return f"/_accept member #{self.group_id} {self.member_id} {self.role}"
+
+class APILeaveGroup(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_leave #{self.group_id}"
+
+class APIListMembers(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_members #{self.group_id}"
+
+class APICreateGroupLink(BaseChatCommand):
+    group_id: GroupId
+    role: GroupMemberRole
+    short: CreateShortLink
+
+    def __str__(self) -> str:
+        return f"/_create link #{self.group_id} {self.role} short={to_on_off(self.short)}"
+
+class APIGroupLinkMemberRole(BaseChatCommand):
+    group_id: GroupId
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        return f"/_set link role #{self.group_id} {self.role}"
+
+class APIDeleteGroupLink(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_delete link #{self.group_id}"
+
+class APIGetGroupLink(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_delete link #{self.group_id}"
+
+class APICreateMemberContact(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_create member contact #{self.group_id} {self.member_id}"
 
 class APIGetServerOperators(BaseChatCommand):
     def __str__(self) -> str: return "/_operators"
 
-# APIGetUserServers UserId
+class APIGetUserServers(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_servers {self.user_id}"
 
 class APIGetUsageConditions(BaseChatCommand):
     def __str__(self) -> str: return "/_conditions"
 
-# APISetConditionsNotified Int64
-# APISetChatItemTTL UserId Int64
-# SetChatItemTTL Int64
-# APIGetChatItemTTL UserId
+class APISetConditionsNotified(BaseChatCommand):
+    condition_id: int
+
+    def __str__(self) -> str:
+        return f"/_conditions_notified {self.condition_id}"
+
+class APISetChatItemTTL(BaseChatCommand):
+    user_id: UserId
+    new_ttl: int
+
+    def __str__(self) -> str:
+        return f"/_ttl {self.user_id} {self.new_ttl}"
+
+class SetChatItemTTL(BaseChatCommand):
+    new_ttl: Literal["day", "week", "month", "year", "none"]
+
+    def __str__(self) -> str:
+        return f"/ttl {self.new_ttl}"
+
+class APIGetChatItemTTL(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_ttl {self.user_id}"
 
 class GetChatItemTTL(BaseChatCommand):
     def __str__(self) -> str: return "/ttl"
 
-# APISetChatTTL UserId ChatRef (Maybe Int64)
+class APISetChatTTL(BaseChatCommand):
+    user_id: UserId
+    chat_ref: ChatRef
+    new_ttl: Optional[int]
+
+    def __str__(self) -> str:
+        ttl = "default" if self.new_ttl is None else str(self.new_ttl)
+        return f"/_ttl {self.user_id} {self.chat_ref} {ttl}"
 
 class APIGetNetworkConfig(BaseChatCommand):
     def __str__(self) -> str: return "/network"
@@ -662,42 +782,303 @@ class APIGetNetworkConfig(BaseChatCommand):
 class ReconnectAllServers(BaseChatCommand):
     def __str__(self) -> str: return "/reconnect"
 
-# APIContactInfo ContactId
-# APIGroupInfo GroupId
-# APIGroupMemberInfo GroupId GroupMemberId
-# APIContactQueueInfo ContactId
-# APIGroupMemberQueueInfo GroupId GroupMemberId
-# APISwitchContact ContactId
-# APISwitchGroupMember GroupId GroupMemberId
-# APIAbortSwitchContact ContactId
-# APIAbortSwitchGroupMember GroupId GroupMemberId
-# APISyncContactRatchet ContactId Bool
-# APISyncGroupMemberRatchet GroupId GroupMemberId Bool
-# APIGetContactCode ContactId
-# APIGetGroupMemberCode GroupId GroupMemberId
-# APIVerifyContact ContactId (Maybe Text)
-# APIVerifyGroupMember GroupId GroupMemberId (Maybe Text)
-# APIEnableContact ContactId
-# APIEnableGroupMember GroupId GroupMemberId
-# SetShowMemberMessages GroupName ContactName Bool
-# ContactInfo ContactName
-# ShowGroupInfo GroupName
-# GroupMemberInfo GroupName ContactName
-# ContactQueueInfo ContactName
-# GroupMemberQueueInfo GroupName ContactName
-# SwitchContact ContactName
-# SwitchGroupMember GroupName ContactName
-# AbortSwitchContact ContactName
-# AbortSwitchGroupMember GroupName ContactName
-# SyncContactRatchet ContactName Bool
-# SyncGroupMemberRatchet GroupName ContactName Bool
-# GetContactCode ContactName
-# GetGroupMemberCode GroupName ContactName
-# VerifyContact ContactName (Maybe Text)
-# VerifyGroupMember GroupName ContactName (Maybe Text)
-# EnableContact ContactName
-# EnableGroupMember GroupName ContactName
-# ChatHelp HelpSection
+class APIContactInfo(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_info @{self.contact_id}"
+
+class APIGroupInfo(BaseChatCommand):
+    group_id: GroupId
+
+    def __str__(self) -> str:
+        return f"/_info #{self.group_id}"
+
+class APIGroupMemberInfo(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_info #{self.group_id} {self.member_id}"
+
+class APIContactQueueInfo(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_queue info @{self.contact_id}"
+
+class APIGroupMemberQueueInfo(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_queue info #{self.group_id} {self.member_id}"
+
+class APISwitchContact(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_switch @{self.contact_id}"
+
+class APISwitchGroupMember(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_switch #{self.group_id} {self.member_id}"
+
+class APIAbortSwitchContact(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_abort switch @{self.contact_id}"
+
+class APIAbortSwitchGroupMember(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_abort switch #{self.group_id} {self.member_id}"
+
+class APISyncContactRatchet(BaseChatCommand):
+    contact_id: ContactId
+    force: bool
+
+    def __str__(self) -> str:
+        force_part = " force=on" if self.force else ""
+        return f"/_sync @{self.contact_id}" + force_part
+
+class APISyncGroupMemberRatchet(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+    force: bool
+
+    def __str__(self) -> str:
+        force_part = " force=on" if self.force else ""
+        return f"/_sync #{self.group_id} {self.member_id}" + force_part
+
+class APIGetContactCode(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_get code @{self.contact_id}"
+
+class APIGetGroupMemberCode(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_get code #{self.group_id} {self.member_id}"
+
+class APIVerifyContact(BaseChatCommand):
+    contact_id: ContactId
+    verify_code: VerifyCode
+
+    def __str__(self) -> str:
+        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
+        return f"/_verify code @{self.contact_id}" + code_part
+
+class APIVerifyGroupMember(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+    verify_code: VerifyCode
+
+    def __str__(self) -> str:
+        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
+        return f"/_verify code #{self.group_id} {self.member_id}" + code_part
+
+class APIEnableContact(BaseChatCommand):
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_enable @{self.contact_id}"
+
+class APIEnableGroupMember(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+
+    def __str__(self) -> str:
+        return f"/_enable #{self.group_id} {self.member_id}"
+
+class SetShowMemberMessages(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    on_or_off: bool
+
+    def __str__(self) -> str:
+        name = "unblock" if self.on_or_off else "block"
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/{name} #{group} @{contact}"
+
+class ContactInfo(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/info @{quote_display_name(self.contact_name)}"
+
+class ShowGroupInfo(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/info #{quote_display_name(self.group_name)}"
+
+class GroupMemberInfo(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/info #{group} @{contact}"
+
+class ContactQueueInfo(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/queue info @{quote_display_name(self.contact_name)}"
+
+class GroupMemberQueueInfo(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/queue info #{group} @{contact}"
+
+class SwitchContact(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/switch @{quote_display_name(self.contact_name)}"
+
+class SwitchGroupMember(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/switch #{group} @{contact}"
+
+class AbortSwitchContact(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/abort switch @{quote_display_name(self.contact_name)}"
+
+class AbortSwitchGroupMember(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/abort switch #{group} @{contact}"
+
+class SyncContactRatchet(BaseChatCommand):
+    contact_name: ContactName
+    force: bool
+
+    def __str__(self) -> str:
+        force_part = " force=on" if self.force else ""
+
+        return f"/sync @{quote_display_name(self.contact_name)}" + force_part
+
+class SyncGroupMemberRatchet(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    force: bool
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+        force_part = " force=on" if self.force else ""
+
+        return f"/sync #{group} @{contact}" + force_part
+
+class GetContactCode(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/code @{quote_display_name(self.contact_name)}"
+
+class GetGroupMemberCode(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/code #{group} @{contact}"
+
+class VerifyContact(BaseChatCommand):
+    contact_name: ContactName
+    verify_code: VerifyCode
+
+    def __str__(self) -> str:
+        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
+
+        return f"/code @{quote_display_name(self.contact_name)}" + code_part
+
+class VerifyGroupMember(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    verify_code: VerifyCode
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
+
+        return f"/code #{group} @{contact}" + code_part
+
+class EnableContact(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/enable @{quote_display_name(self.contact_name)}"
+
+class EnableGroupMember(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/enable #{group} @{contact}"
+
+class ChatHelp(BaseChatCommand):
+    help_section: Optional[Literal[
+        "files",
+        "groups",
+        "contacts",
+        "address",
+        "incognito",
+        "markdown",
+        "messages",
+        "remote",
+        "settings",
+        "db",
+    ]]
+
+    def __str__(self) -> str:
+        if self.help_section is None:
+            return "/help"
+        elif self.help_section == "markdown":
+            return "/markdown"
+        elif self.help_section == "incognito":
+            return "/incognito"
+        else:
+            return f"/help {self.help_section}"
 
 class Welcome(BaseChatCommand):
     def __str__(self) -> str: return "/welcome"
@@ -734,10 +1115,31 @@ class ShowMyAddress(BaseChatCommand):
 # AddMember GroupName ContactName GroupMemberRole
 # MemberRole GroupName ContactName GroupMemberRole
 # BlockForAll GroupName ContactName Bool
-# LeaveGroup GroupName
-# DeleteGroup GroupName
-# ClearGroup GroupName
-# ListMembers GroupName
+
+class LeaveGroup(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/leave #{self.group_name}"
+
+class DeleteGroup(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/delete #{self.group_name}"
+
+class ClearGroup(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/clear #{self.group_name}"
+
+class ListMembers(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/members #{self.group_name}"
+
 # APIListGroups UserId (Maybe ContactId) (Maybe String)
 # ListGroups (Maybe ContactName) (Maybe String)
 # ShowGroupProfile GroupName
