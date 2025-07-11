@@ -339,7 +339,7 @@ GroupName = str
 ContactName = str
 CreateShortLink = bool
 FileTransferId = int
-ImageData = str
+ImageData = str  # TODO data:image/(png|jpg);base64,{valid base64}
 RemoteHostId = int
 RemoteCtrlId = int
 CbNonce = str
@@ -357,6 +357,10 @@ def quote_display_name(name: str) -> str:
 
 def to_on_off(b: bool) -> str:
     return "on" if b else "off"
+
+def quote_msg(msg: str) -> str:
+    if ")" in msg:
+        raise ValueError(f"Invalid quoted message: {msg}")
 
 class BaseChatCommand(BaseModel, ABC):
     @abstractmethod
@@ -1083,38 +1087,182 @@ class ChatHelp(BaseChatCommand):
 class Welcome(BaseChatCommand):
     def __str__(self) -> str: return "/welcome"
 
-# APIAddContact UserId CreateShortLink IncognitoEnabled
-# AddContact CreateShortLink IncognitoEnabled
-# APISetConnectionIncognito Int64 IncognitoEnabled
-# APIChangeConnectionUser Int64 UserId
-# APIConnectContactViaAddress UserId IncognitoEnabled ContactId
-# ConnectSimplex IncognitoEnabled
-# ClearContact ContactName
-# APIListContacts UserId
+class APIAddContact(BaseChatCommand):
+    user_id: UserId
+    short: CreateShortLink
+    incognito: IncognitoEnabled
+
+    def __str__(self) -> str:
+        short = " short" if self.short else ""
+        incognito = " incognito" if self.incognito else ""
+
+        return f"/_connect {self.user_id} {short} {incognito}"
+
+class AddContact(BaseChatCommand):
+    short: CreateShortLink
+    incognito: IncognitoEnabled
+
+    def __str__(self) -> str:
+        short = " short" if self.short else ""
+        incognito = " incognito" if self.incognito else ""
+
+        return f"/connect {short} {incognito}"
+
+class APISetConnectionIncognito(BaseChatCommand):
+    connection_id: int
+    incognito: IncognitoEnabled
+
+    def __str__(self) -> str:
+        return f"/_set incognito :{self.connection_id} {to_on_off(self.incognito)}"
+
+class APIChangeConnectionUser(BaseChatCommand):
+    connection_id: int
+    new_user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_set conn user :{self.connection_id} {self.new_user_id}"
+
+class APIConnectContactViaAddress(BaseChatCommand):
+    user_id: UserId
+    incognito: IncognitoEnabled
+    contact_id: ContactId
+
+    def __str__(self) -> str:
+        return f"/_connect contact {self.user_id} incognito={to_on_off(self.incognito)} {self.contact_id}"
+
+class ConnectSimplex(BaseChatCommand):
+    incognito: IncognitoEnabled
+
+    def __str__(self) -> str:
+        incognito = " incognito" if self.incognito else ""
+        return "/simple" + incognito
+
+class ClearContact(BaseChatCommand):
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        return f"/clear @{quote_display_name(self.contact_name)}"
+
+class APIListContacts(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_contacts {self.user_id}"
 
 class ListContacts(BaseChatCommand):
     def __str__(self) -> str: return "/contacts"
 
-# APICreateMyAddress UserId CreateShortLink
-# CreateMyAddress CreateShortLink
-# APIDeleteMyAddress UserId
+class APICreateMyAddress(BaseChatCommand):
+    user_id: UserId
+    short: CreateShortLink
+
+    def __str__(self) -> str:
+        return f"/_address {self.user_id} short={to_on_off(self.short)}"
+
+class CreateMyAddress(BaseChatCommand):
+    short: CreateShortLink
+
+    def __str__(self) -> str:
+        short = " short" if self.short else ""
+
+        return "/address" + short
+
+class APIDeleteMyAddress(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_delete_address {self.user_id}"
 
 class DeleteMyAddress(BaseChatCommand):
     def __str__(self) -> str: return "/delete_address"
 
-# APIShowMyAddress UserId
+class APIShowMyAddress(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/_show_address {self.user_id}"
 
 class ShowMyAddress(BaseChatCommand):
     def __str__(self) -> str: return "/show_address"
 
-# APISetProfileAddress UserId Bool
-# SetProfileAddress Bool
-# AcceptContact IncognitoEnabled ContactName
-# SendMemberContactMessage GroupName ContactName Text
-# DeleteMemberMessage GroupName ContactName Text
-# AddMember GroupName ContactName GroupMemberRole
-# MemberRole GroupName ContactName GroupMemberRole
-# BlockForAll GroupName ContactName Bool
+class APISetProfileAddress(BaseChatCommand):
+    user_id: UserId
+    enabled: bool
+
+    def __str__(self) -> str:
+        return f"/_profile_address {self.user_id} {to_on_off(self.enabled)}"
+
+class SetProfileAddress(BaseChatCommand):
+    enabled: bool
+
+    def __str__(self) -> str:
+        return f"/profile_address {to_on_off(self.enabled)}"
+
+class AcceptContact(BaseChatCommand):
+    incognito: IncognitoEnabled
+    contact_name: ContactName
+
+    def __str__(self) -> str:
+        incognito = " incognito" if self.incognito else ""
+        return f"/accept{incognito} @{quote_display_name(self.contact_name)}"
+
+class SendMemberContactMessage(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName  # TODO consistently change to member_name?
+    msg: str
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+        msg = json.dumps(self.msg)
+
+        return f"@#{group} @{contact} {msg}"
+
+class DeleteMemberMessage(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    deleted_msg: str
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+        msg = self.deleted_msg
+
+        return f"\\\\#{group} @{contact} {msg}"
+
+class AddMember(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/add #{group} @{contact} {self.role}"
+
+class MemberRole(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/member role #{group} @{contact} {self.role}"
+
+class BlockForAll(BaseChatCommand):
+    group_name: GroupName
+    contact_name: ContactName
+    blocked: bool
+
+    def __str__(self) -> str:
+        name = "block" if self.blocked else "unblock"
+        group = quote_display_name(self.group_name)
+        contact = quote_display_name(self.contact_name)
+
+        return f"/{name} for all #{group} @{contact}"
 
 class LeaveGroup(BaseChatCommand):
     group_name: GroupName
@@ -1140,53 +1288,246 @@ class ListMembers(BaseChatCommand):
     def __str__(self) -> str:
         return f"/members #{self.group_name}"
 
-# APIListGroups UserId (Maybe ContactId) (Maybe String)
-# ListGroups (Maybe ContactName) (Maybe String)
-# ShowGroupProfile GroupName
-# UpdateGroupDescription GroupName (Maybe Text)
-# ShowGroupDescription GroupName
-# CreateGroupLink GroupName GroupMemberRole CreateShortLink
-# GroupLinkMemberRole GroupName GroupMemberRole
-# DeleteGroupLink GroupName
-# ShowGroupLink GroupName
-# SendGroupMessageQuote {groupName :: GroupName, contactName_ :: Maybe ContactName, quotedMsg :: Text, message :: Text}
+class APIListGroups(BaseChatCommand):
+    user_id: UserId
+    contact_id: Optional[ContactId]
+    search: Optional[str]
+
+    def __str__(self) -> str:
+        # TODO file issue: no space between _groups and id
+        # also, what if search begins with @?
+        contact = f" @{self.contact_id}" if self.contact_id is not None else ""
+        search = (" " + self.search) if self.search is not None else ""
+
+        return f"/_groups{self.user_id}{contact}{search}"
+
+class ListGroups(BaseChatCommand):
+    contact_name: Optional[ContactName]
+    search: Optional[str]
+
+    def __str__(self) -> str:
+        contact = f" @{quote_display_name(self.contact_name)}" if self.contact_name is not None else ""
+        search = (" " + self.search) if self.search is not None else ""
+
+        return f"/groups{contact}{search}"
+
+class ShowGroupProfile(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/group_profile #{quote_display_name(self.group_name)}"
+
+class UpdateGroupDescription(BaseChatCommand):
+    group_name: GroupName
+    description: Optional[str]
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        if self.description is not None:
+            return f"/set welcome #{group} {json.dumps(self.description)}"
+        else:
+            return f"/delete welcome #{group}"
+
+class ShowGroupDescription(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/show welcome #{quote_display_name(self.group_name)}"
+
+class CreateGroupLink(BaseChatCommand):
+    group_name: GroupName
+    role: GroupMemberRole
+    short: CreateShortLink
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        short = " short" if self.short else ""
+
+        return f"/create link #{group} {self.role}{short}"
+
+class GroupLinkMemberRole(BaseChatCommand):
+    group_name: GroupName
+    role: GroupMemberRole
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+
+        return f"/set link role #{group} {self.role}"
+
+class DeleteGroupLink(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/delete link #{quote_display_name(self.group_name)}"
+
+class ShowGroupLink(BaseChatCommand):
+    group_name: GroupName
+
+    def __str__(self) -> str:
+        return f"/show link #{quote_display_name(self.group_name)}"
+
+class SendGroupMessageQuote(BaseChatCommand):
+    group_name: GroupName
+    contact_name: Optional[ContactName]
+    quoted_msg: str
+    msg: str
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        contact = (" " + quote_display_name(self.contact_name)) if self.contact_name is not None else ""
+        quoted = quote_msg(self.quoted_msg)
+        msg = json.dumps(self.msg)
+
+        return f">#{group}{contact} {quoted} {msg}"
 
 class ClearNoteFolder(BaseChatCommand):
     def __str__(self) -> str: return "/clear *"
 
-# LastChats (Maybe Int)
-# ShowChatItem (Maybe ChatItemId)
-# ShowLiveItems Bool
-# ReceiveFile {fileId :: FileTransferId, userApprovedRelays :: Bool, storeEncrypted :: Maybe Bool, fileInline :: Maybe Bool, filePath :: Maybe FilePath}
-# SetFileToReceive {fileId :: FileTransferId, userApprovedRelays :: Bool, storeEncrypted :: Maybe Bool}
-# CancelFile FileTransferId
-# FileStatus FileTransferId
+class LastChats(BaseChatCommand):
+    count: Optional[int]
+
+    def __str__(self) -> str:
+        count_part = "all" if self.count is None else str(self.count)
+        return f"/chats {count_part}"
+
+class ShowChatItem(BaseChatCommand):
+    chat_item_id: Optional[ChatItemId]
+
+    def __str__(self) -> str:
+        assert self.chat_item_id is not None, "bug in parser?"  # TODO
+        return f"/show {self.chat_item_id}"
+
+class ShowLiveItems(BaseChatCommand):
+    enabled: bool
+
+    def __str__(self) -> str:
+        return f"/show {to_on_off(self.enabled)}"
+
+class ReceiveFile(BaseChatCommand):
+    file_transfer_id: FileTransferId  # TODO fileId?
+    user_approved_relays: bool
+    store_encrypted: Optional[bool]
+    file_inline: Optional[bool]
+    file_path: Optional[FilePath]
+
+    def __str__(self) -> str:
+        file_id = str(self.file_transfer_id)
+        approved = " approved_relays=" + to_on_off(self.user_approved_relays)
+        encrypt = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
+        inline = (" inline=" + to_on_off(self.file_inline)) if self.file_inline is not None else ""
+        file_path = (" " + self.file_path) if self.file_path is not None else ""
+
+        return f"/freceive " + file_id + approved + encrypt + inline + file_path
+
+class SetFileToReceive(BaseChatCommand):
+    file_transfer_id: FileTransferId  # TODO fileId?
+    user_approved_relays: bool
+    store_encrypted: Optional[bool]
+
+    def __str__(self) -> str:
+        file_id = str(self.file_transfer_id)
+        approved = " approved_relays=" + to_on_off(self.user_approved_relays)
+        encrypt = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
+
+        return "/_set_file_to_receive " + file_id + approved + encrypt
+
+class CancelFile(BaseChatCommand):
+    file_transfer_id: FileTransferId
+
+    def __str__(self) -> str:
+        return f"/fcancel {self.file_transfer_id}"
+
+class FileStatus(BaseChatCommand):
+    file_transfer_id: FileTransferId
+
+    def __str__(self) -> str:
+        return f"/fstatus {self.file_transfer_id}"
 
 class ShowProfile(BaseChatCommand):
     def __str__(self) -> str: return "/profile"
 
-# UpdateProfile ContactName Text
-# UpdateProfileImage (Maybe ImageData)
+class UpdateProfile(BaseChatCommand):
+    display_name: ContactName
+    full_name: str
+
+    def __str__(self) -> str:
+        return f"/profile {quote_display_name(self.display_name)} {self.full_name}"
+
+class UpdateProfileImage(BaseChatCommand):
+    image_data: Optional[ImageData]
+
+    def __str__(self) -> str:
+        if self.image_data is None:
+            return "/delete profile image"
+        else:
+            return f"/set profile image {self.image_data}"
 
 class ShowProfileImage(BaseChatCommand):
     def __str__(self) -> str: return "/show profile image"
 
-# SetUserTimedMessages Bool
-# SetGroupTimedMessages GroupName (Maybe Int)
-# SetLocalDeviceName Text
+class SetUserTimedMessages(BaseChatCommand):
+    disappear: bool
+
+    def __str__(self) -> str:
+        return "/set disappear " + ("yes" if self.disappear else "no")
+
+class SetGroupTimedMessages(BaseChatCommand):
+    group_name: GroupName
+    timed_ttl: Optional[int]
+
+    def __str__(self) -> str:
+        group = quote_display_name(self.group_name)
+        ttl = f"on {self.timed_ttl}" if self.timed_ttl is not None else "off"
+
+        return f"/set disappear #{group} {ttl}"
+
+class SetLocalDeviceName(BaseChatCommand):
+    name: str
+
+    def __str__(self) -> str:
+        return f"/set device name {self.name}"
 
 class ListRemoteHosts(BaseChatCommand):
     def __str__(self) -> str: return "/list remote hosts"
 
-# SwitchRemoteHost (Maybe RemoteHostId)
-# DeleteRemoteHost RemoteHostId
-# StoreRemoteFile {remoteHostId :: RemoteHostId, storeEncrypted :: Maybe Bool, localPath :: FilePath}
+class SwitchRemoteHost(BaseChatCommand):
+    remote_host_id: Optional[RemoteHostId]
+
+    def __str__(self) -> str:
+        host_part = "local" if self.remote_host_id is None else str(self.remote_host_id)
+
+        return "/switch remote host " + host_part
+
+class DeleteRemoteHost(BaseChatCommand):
+    remote_host_id: RemoteHostId
+
+    def __str__(self) -> str:
+        return f"/delete remote host {self.remote_host_id}"
+
+class StoreRemoteFile(BaseChatCommand):
+    remote_host_id: RemoteHostId
+    store_encrypted: Optional[bool]
+    local_path: FilePath
+
+    def __str__(self) -> str:
+        encrypted_part = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
+
+        return f"/store remote file {self.remote_host_id}{encrypted_part} {self.local_path}"
 
 class FindKnownRemoteCtrl(BaseChatCommand):
     def __str__(self) -> str: return "/find remote ctrl"
 
-# ConfirmRemoteCtrl RemoteCtrlId
-# VerifyRemoteCtrlSession Text
+class ConfirmRemoteCtrl(BaseChatCommand):
+    remote_ctrl_id: RemoteCtrlId
+
+    def __str__(self) -> str:
+        return f"/confirm remote ctrl {self.remote_ctrl_id}"
+
+class VerifyRemoteCtrlSession(BaseChatCommand):
+    session_id: str
+
+    def __str__(self) -> str:
+        return f"/verify remote ctrl {self.session_id}"
 
 class ListRemoteCtrls(BaseChatCommand):
     def __str__(self) -> str: return "/list remote ctrls"
@@ -1194,7 +1535,11 @@ class ListRemoteCtrls(BaseChatCommand):
 class StopRemoteCtrl(BaseChatCommand):
     def __str__(self) -> str: return "/stop remote ctrl"
 
-# DeleteRemoteCtrl RemoteCtrlId
+class DeleteRemoteCtrl(BaseChatCommand):
+    remote_ctrl_id: RemoteCtrlId
+
+    def __str__(self) -> str:
+        return f"/delete remote ctrl {self.remote_ctrl_id}"
 
 class QuitChat(BaseChatCommand):
     def __str__(self) -> str: return "/quit"
@@ -1205,8 +1550,17 @@ class ShowVersion(BaseChatCommand):
 class DebugLocks(BaseChatCommand):
     def __str__(self) -> str: return "/debug locks"
 
-# GetAgentSubsTotal UserId
-# GetAgentServersSummary UserId
+class GetAgentSubsTotal(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/get subs total {self.user_id}"
+
+class GetAgentServersSummary(BaseChatCommand):
+    user_id: UserId
+
+    def __str__(self) -> str:
+        return f"/get servers summary {self.user_id}"
 
 class ResetAgentServersStats(BaseChatCommand):
     def __str__(self) -> str: return "/reset servers stats"
@@ -1226,4 +1580,8 @@ class GetAgentWorkersDetails(BaseChatCommand):
 class GetAgentQueuesInfo(BaseChatCommand):
     def __str__(self) -> str: return "/get queues"
 
-# CustomChatCommand ByteString
+class CustomChatCommand(BaseChatCommand):
+    command: str
+
+    def __str__(self) -> str:
+        return "//" + self.command
