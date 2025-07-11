@@ -3,7 +3,7 @@ from typing import Annotated, Literal, Optional, Union
 from abc import ABC, abstractmethod
 import sys
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 if sys.version_info < (3, 13):
     from deprecated import deprecated
@@ -346,6 +346,216 @@ CbNonce = str
 # Doesn't exist in Haskell
 VerifyCode = Annotated[str, StringConstraints(pattern=r"^[^\d ]$")]
 
+CallMedia = Literal["audio", "video"]
+
+class CallCapabilities(BaseModel):
+    encryption: bool
+
+class CallType(BaseModel):
+    media: CallMedia
+    capabilities: CallCapabilities
+
+class UserMsgReceiptSettings(BaseModel):
+    enable: bool
+    clear_overrides: bool = Field(..., alias="clearOverrides")
+
+    def __str__(self) -> str:
+        return f"{to_on_off(self.enable)} clear_overrides={self.clear_overrides}"
+
+class AppFilePathsConfig(BaseModel):
+    files_folder: FilePath = Field(..., alias="appFilesFolder")
+    temp_folder: FilePath = Field(..., alias="appTempFolder")
+    assets_folder: FilePath = Field(..., alias="appAssetsFolder")
+    remote_hosts_folder: Optional[FilePath] = Field(..., alias="appRemoteHostsFolder")
+
+class ArchiveConfig(BaseModel):
+    archive_path: FilePath = Field(..., alias="archivePath")
+    disable_compression: Optional[bool] = Field(..., alias="disableCompression")
+    parent_temp_directory: Optional[FilePath] = Field(..., alias="parentTempDirectory")
+
+DBEncryptionKey = str
+
+class DBEncryptionConfig(BaseModel):
+    current_key: DBEncryptionKey = Field(..., alias="currentKey")
+    new_key: DBEncryptionKey = Field(..., alias="newKey")
+    keep_key: Optional[bool] = Field(..., alias="keepKey")
+
+SocksMode = Literal["always", "onion"]
+HostMode = Literal["onionViaSocks", "onion", "public"]
+TransportSessionMode = Literal["user", "session", "server", "entity"]
+SMPProxyMode = Literal["always", "unknown", "unprotected", "never"]
+SMPProxyFallback = Literal["allow", "allowProtected", "prohibited"]
+SMPWebPortServers = Literal["all", "preset", "off"]
+
+# class NetworkConfig(BaseModel):
+#     socksProxy: Optional[SocksProxyWithAuth]
+#     socksMode: SocksMode
+#     hostMode: HostMode
+#     requiredHostMode: bool
+#     sessionMode: TransportSessionMode
+#     smpProxyMode: SMPProxyMode
+#     smpProxyFallback: SMPProxyFallback
+#     smpWebPortServers: SMPWebPortServers
+#     tcpConnectTimeout: int
+#     tcpTimeout: int
+#     tcpTimeoutPerKb: int
+#     rcvConcurrency: int
+#     tcpKeepAlive: Optional[KeepAliveOpts]
+#     smpPingInterval: int
+#     smpPingCount: int
+#     logTLSErrors: bool
+
+
+# class AppSettings(BaseModel):
+#     appPlatform: Optional[AppPlatform]
+#     networkConfig: Optional[NetworkConfig]
+#     networkProxy: Optional[NetworkProxy]
+#     privacyEncryptLocalFiles: Optional[bool]
+#     privacyAskToApproveRelays: Optional[bool]
+#     privacyAcceptImages: Optional[bool]
+#     privacyLinkPreviews: Optional[bool]
+#     privacyShowChatPreviews: Optional[bool]
+#     privacySaveLastDraft: Optional[bool]
+#     privacyProtectScreen: Optional[bool]
+#     privacyMediaBlurRadius: Optional[int]
+#     notificationMode: Optional[NotificationMode]
+#     notificationPreviewMode: Optional[NotificationPreviewMode]
+#     webrtcPolicyRelay: Optional[bool]
+#     webrtcICEServers: Optional[list[str]]
+#     confirmRemoteSessions: Optional[bool]
+#     connectRemoteViaMulticast: Optional[bool]
+#     connectRemoteViaMulticastAuto: Optional[bool]
+#     developerTools: Optional[bool]
+#     confirmDBUpgrades: Optional[bool]
+#     androidCallOnLockScreen: Optional[LockScreenCalls]
+#     iosCallKitEnabled: Optional[bool]
+#     iosCallKitCallsInRecents: Optional[bool]
+#     uiProfileImageCornerRadius: Optional[float]
+#     uiChatItemRoundness: Optional[float]
+#     uiChatItemTail: Optional[bool]
+#     uiColorScheme: Optional[UIColorScheme]
+#     uiDarkColorScheme: Optional[DarkColorScheme]
+#     uiCurrentThemeIds: Optional[(Map ThemeColorScheme Text)]
+#     uiThemes: Optional[list[UITheme]]
+#     oneHandUI: Optional[bool]
+#     chatBottomBar: Optional[bool]
+
+ChatType = Literal["direct", "group", "local", "contactRequest", "contactConnection"]
+
+class ChatName(BaseModel):
+    chatType: ChatType
+    chatName: str
+
+    def __str__(self) -> str:
+        if self.chatType == "direct":               t = "@"
+        elif self.chatType == "group":              t = "#"
+        elif self.chatType == "local":              t = "*"
+        elif self.chatType == "contactConnection":  t = ":"
+        elif self.chatType == "group":              t = "#"
+        else:
+            # TODO contactRequest unreachable(?)
+            raise ValueError(f"Illegal chat type: {self.chatType}")
+        name = quote_display_name(self.chatName)
+
+        return t + name
+
+SbKey = str
+
+class CryptoFileArgs(BaseModel):
+    fileKey: SbKey
+    fileNonce: CbNonce
+
+class CryptoFile(BaseModel):
+    filePath: FilePath
+    cryptoArgs: Optional[CryptoFileArgs]
+
+    def __str__(self) -> str:
+        if self.cryptoArgs is not None:
+            args_part = f" key={self.cryptoArgs.fileKey} nonce={self.cryptoArgs.fileKey}"
+        else:
+            args_part = ""
+
+        return f"{args_part}{self.filePath}"
+
+class ChatDeleteMode(BaseModel):
+    mode: Literal["full", "entity", "messages"]
+    notify: Optional[bool]
+
+    def __str__(self) -> str:
+        assert (self.mode == "messages") == (self.notify is None)
+        notify_part = (" notify=" + to_on_off(self.notify)) if self.notify is not None else ""
+        return f" {self.mode}{notify_part}"
+
+class WebRTCSession(BaseModel):
+    rtcSession: str
+    rtcIceCandidates: str
+
+class WebRTCCallOffer(BaseModel):
+    callType: CallType
+    rtcSession: WebRTCSession
+
+class WebRTCExtraInfo(BaseModel):
+    rtcIceCandidates: str
+
+WebRTCCallStatus = Literal["connecting", "connected", "disconnected", "failed"]
+
+FeatureAllowed = Literal["always", "yes", "no"]
+
+class TimedMessagesPreference(BaseModel):
+    allow: FeatureAllowed
+    ttl: Optional[int]
+class FullDeletePreference(BaseModel):
+    allow: FeatureAllowed
+class ReactionsPreference(BaseModel):
+    allow: FeatureAllowed
+class VoicePreference(BaseModel):
+    allow: FeatureAllowed
+class CallsPreference(BaseModel):
+    allow: FeatureAllowed
+
+class Preferences(BaseModel):
+    timedMessages: Optional[TimedMessagesPreference]
+    fullDelete: Optional[FullDeletePreference]
+    reactions: Optional[ReactionsPreference]
+    voice: Optional[VoicePreference]
+    calls: Optional[CallsPreference]
+
+UIColorMode = Literal["light", "dark"]
+UIColor = str
+
+class UIColors(BaseModel):
+    accent: Optional[UIColor]
+    accentVariant: Optional[UIColor]
+    secondary: Optional[UIColor]
+    secondaryVariant: Optional[UIColor]
+    background: Optional[UIColor]
+    menus: Optional[UIColor]
+    title: Optional[UIColor]
+    accentVariant2: Optional[UIColor]
+    sentMessage: Optional[UIColor]
+    sentReply: Optional[UIColor]
+    receivedMessage: Optional[UIColor]
+    receivedReply: Optional[UIColor]
+
+ChatWallpaperScale = Literal["fill", "fit", "repeat"]
+
+class ChatWallpaper(BaseModel):
+    preset: Optional[str]
+    imageFile: Optional[FilePath]
+    background: Optional[UIColor]
+    tint: Optional[UIColor]
+    scaleType: Optional[ChatWallpaperScale]
+    scale: Optional[float]
+
+class UIThemeEntityOverride(BaseModel):
+    mode: UIColorMode
+    wallpaper: Optional[ChatWallpaper]
+    colors: UIColors
+
+class UIThemeEntityOverrides(BaseModel):
+    light: Optional[UIThemeEntityOverride]
+    dark: Optional[UIThemeEntityOverride]
+
 def quote_display_name(name: str) -> str:
     # TODO address minor difference between Haskell isSpace and python str.isspace
     if all(not c.isspace() for c in name) and "," not in name:
@@ -361,6 +571,9 @@ def to_on_off(b: bool) -> str:
 def quote_msg(msg: str) -> str:
     if ")" in msg:
         raise ValueError(f"Invalid quoted message: {msg}")
+    return "(" + msg + ")"
+
+# -------------------------------------------------------------
 
 class BaseChatCommand(BaseModel, ABC):
     @abstractmethod
@@ -383,12 +596,6 @@ class APISetActiveUser(BaseChatCommand):
             cmd += " " + json.dumps(self.user_pwd)
         return cmd
 
-class SetAllContactReceipts(BaseChatCommand):
-    on_or_off: bool
-
-    def __str__(self) -> str:
-        return f"/set receipts all {to_on_off(self.on_or_off)}"
-
 class SetActiveUser(BaseChatCommand):
     user_name: UserName
     user_pwd: Optional[UserPwd]
@@ -398,6 +605,38 @@ class SetActiveUser(BaseChatCommand):
         if self.user_pwd is not None:
             cmd += " " + json.dumps(self.user_pwd)
         return cmd
+
+class SetAllContactReceipts(BaseChatCommand):
+    on_or_off: bool
+
+    def __str__(self) -> str:
+        return f"/set receipts all {to_on_off(self.on_or_off)}"
+
+class APISetUserContactReceipts(BaseChatCommand):
+    user_id: UserId
+    settings: UserMsgReceiptSettings
+
+    def __str__(self) -> str:
+        return f"/_set receipts contacts {self.user_id} {self.settings}"
+
+class SetUserContactReceipts(BaseChatCommand):
+    settings: UserMsgReceiptSettings
+
+    def __str__(self) -> str:
+        return f"/set receipts contacts {self.settings}"
+
+class APISetUserGroupReceipts(BaseChatCommand):
+    user_id: UserId
+    settings: UserMsgReceiptSettings
+
+    def __str__(self) -> str:
+        return f"/_set receipts groups {self.user_id} {self.settings}"
+
+class SetUserGroupReceipts(BaseChatCommand):
+    settings: UserMsgReceiptSettings
+
+    def __str__(self) -> str:
+        return f"/set receipts groups {self.settings}"
 
 class APIHideUser(BaseChatCommand):
     user_id: UserId
@@ -517,6 +756,12 @@ class SetRemoteHostsFolder(BaseChatCommand):
     def __str__(self) -> str:
         return f"/remote_hosts_folder {self.path}"
 
+class APISetAppFilePaths(BaseChatCommand):
+    config: AppFilePathsConfig
+
+    def __str__(self) -> str:
+        return f"/set file paths {self.config.model_dump_json()}"
+
 class APISetEncryptLocalFiles(BaseChatCommand):
     on_or_off: bool
 
@@ -529,11 +774,35 @@ class SetContactMergeEnabled(BaseChatCommand):
     def __str__(self) -> str:
         return f"/contact_merge {to_on_off(self.on_or_off)}"
 
+class APIExportArchive(BaseChatCommand):
+    config: ArchiveConfig
+
+    def __str__(self) -> str:
+        return f"/_db export {self.config.model_dump_json()}"
+
 class ExportArchive(BaseChatCommand):
     def __str__(self) -> str: return "/db export"
 
+class APIImportArchive(BaseChatCommand):
+    config: ArchiveConfig
+
+    def __str__(self) -> str:
+        return f"/_db import {self.config.model_dump_json()}"
+
 class APIDeleteStorage(BaseChatCommand):
     def __str__(self) -> str: return "/_db delete"
+
+class APIStorageEncryption(BaseChatCommand):
+    config: DBEncryptionConfig
+
+    def __str__(self) -> str:
+        return f"/_db encryption {self.config.model_dump_json()}"
+
+class TestStorageEncryption(BaseChatCommand):
+    key: DBEncryptionKey
+
+    def __str__(self) -> str:
+        return f"/db test key {self.key}"
 
 class SlowSQLQueries(BaseChatCommand):
     def __str__(self) -> str: return "/sql slow"
@@ -597,6 +866,13 @@ class APIChatUnread(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_unread chat {self.chat_ref} {to_on_off(self.on_or_off)}"
 
+class APIDeleteChat(BaseChatCommand):
+    chat_ref: ChatRef
+    mode: ChatDeleteMode
+
+    def __str__(self) -> str:
+        return f"/_delete {self.chat_ref}{self.mode}"
+
 class APIClearChat(BaseChatCommand):
     chat_ref: ChatRef
 
@@ -617,11 +893,47 @@ class APIRejectContact(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_reject {self.conn_req_id}"
 
+class APISendCallInvitation(BaseChatCommand):
+    contact_id: ContactId
+    call_type: CallType
+
+    def __str__(self) -> str:
+        return f"/_call invite @{self.contact_id} {self.call_type.model_dump_json()}"
+
+class SendCallInvitation(BaseChatCommand):
+    contact_name: ContactName
+    # Always type=video encrypted=true
+    # call_type: CallType
+
+    def __str__(self) -> str:
+        return f"/call @{quote_display_name(self.contact_name)}"
+
 class APIRejectCall(BaseChatCommand):
     contact_id: ContactId
 
     def __str__(self) -> str:
         return f"/_call reject @{self.contact_id}"
+
+class APISendCallOffer(BaseChatCommand):
+    contact_id: ContactId
+    offer: WebRTCCallOffer
+
+    def __str__(self) -> str:
+        return f"/_call offer @{self.contact_id} {self.offer.model_dump_json()}"
+
+class APISendCallAnswer(BaseChatCommand):
+    contact_id: ContactId
+    session: WebRTCSession
+
+    def __str__(self) -> str:
+        return f"/_call answer @{self.contact_id} {self.session.model_dump_json()}"
+
+class APISendCallExtraInfo(BaseChatCommand):
+    contact_id: ContactId
+    extra_info: WebRTCExtraInfo
+
+    def __str__(self) -> str:
+        return f"/_call extra @{self.contact_id} {self.extra_info.model_dump_json()}"
 
 class APIEndCall(BaseChatCommand):
     contact_id: ContactId
@@ -632,8 +944,22 @@ class APIEndCall(BaseChatCommand):
 class APIGetCallInvitations(BaseChatCommand):
     def __str__(self) -> str: return "/_call get"
 
+class APICallStatus(BaseChatCommand):
+    contact_id: ContactId
+    status: WebRTCCallStatus
+
+    def __str__(self) -> str:
+        return f"/_call status @{self.contact_id} {self.status}"
+
 class APIGetNetworkStatuses(BaseChatCommand):
     def __str__(self) -> str: return "/_network_statuses"
+
+class APISetContactPrefs(BaseChatCommand):
+    contact_id: ContactId
+    preferences: Preferences
+
+    def __str__(self) -> str:
+        return f"/_set prefs @{self.contact_id} {self.preferences.model_dump_json()}"
 
 class APISetContactAlias(BaseChatCommand):
     contact_id: ContactId
@@ -658,6 +984,22 @@ class APISetConnectionAlias(BaseChatCommand):
     def __str__(self) -> str:
         alias_part = (" " + self.local_alias) if self.local_alias else ""
         return f"/_set alias :{self.connection_id}" + alias_part
+
+class APISetUserUIThemes(BaseChatCommand):
+    user_id: UserId
+    themes: Optional[UIThemeEntityOverrides]
+
+    def __str__(self) -> str:
+        themes_part = self.themes.model_dump_json() if self.themes is not None else ""
+        return f"/_set theme user {self.user_id}{themes_part}"
+
+class APISetChatUIThemes(BaseChatCommand):
+    chat_ref: ChatRef
+    themes: Optional[UIThemeEntityOverrides]
+
+    def __str__(self) -> str:
+        themes_part = self.themes.model_dump_json() if self.themes is not None else ""
+        return f"/_set theme user {self.chat_ref}{themes_part}"
 
 class APIGetNtfToken(BaseChatCommand):
     def __str__(self) -> str: return "/_ntf get"
@@ -1402,6 +1744,41 @@ class ShowLiveItems(BaseChatCommand):
 
     def __str__(self) -> str:
         return f"/show {to_on_off(self.enabled)}"
+
+class SendFile(BaseChatCommand):
+    chat_name: ChatName
+    crypto_file: CryptoFile
+
+    def __str__(self) -> str:
+        return f"/file {self.chat_name} {self.crypto_file}"
+
+class SendImage(BaseChatCommand):
+    chat_name: ChatName
+    crypto_file: CryptoFile
+
+    def __str__(self) -> str:
+        return f"/image {self.chat_name} {self.crypto_file}"
+
+class ForwardFile(BaseChatCommand):
+    chat_name: ChatName
+    file_id: FileTransferId
+
+    def __str__(self) -> str:
+        return f"/fforward {self.chat_name} {self.file_id}"
+
+class ForwardImage(BaseChatCommand):
+    chat_name: ChatName
+    file_id: FileTransferId
+
+    def __str__(self) -> str:
+        return f"/image_forward {self.chat_name} {self.file_id}"
+
+class SendFileDescription(BaseChatCommand):
+    chat_name: ChatName
+    file_path: FilePath
+
+    def __str__(self) -> str:
+        return f"/fdescription {self.chat_name} {self.file_path}"
 
 class ReceiveFile(BaseChatCommand):
     file_transfer_id: FileTransferId  # TODO fileId?
