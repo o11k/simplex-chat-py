@@ -380,6 +380,7 @@ class DBEncryptionConfig(BaseModel):
     new_key: DBEncryptionKey = Field(..., alias="newKey")
     keep_key: Optional[bool] = Field(..., alias="keepKey")
 
+SocksProxyWithAuth = str  # TODO validate
 SocksMode = Literal["always", "onion"]
 HostMode = Literal["onionViaSocks", "onion", "public"]
 TransportSessionMode = Literal["user", "session", "server", "entity"]
@@ -387,58 +388,53 @@ SMPProxyMode = Literal["always", "unknown", "unprotected", "never"]
 SMPProxyFallback = Literal["allow", "allowProtected", "prohibited"]
 SMPWebPortServers = Literal["all", "preset", "off"]
 
-# class NetworkConfig(BaseModel):
-#     socksProxy: Optional[SocksProxyWithAuth]
-#     socksMode: SocksMode
-#     hostMode: HostMode
-#     requiredHostMode: bool
-#     sessionMode: TransportSessionMode
-#     smpProxyMode: SMPProxyMode
-#     smpProxyFallback: SMPProxyFallback
-#     smpWebPortServers: SMPWebPortServers
-#     tcpConnectTimeout: int
-#     tcpTimeout: int
-#     tcpTimeoutPerKb: int
-#     rcvConcurrency: int
-#     tcpKeepAlive: Optional[KeepAliveOpts]
-#     smpPingInterval: int
-#     smpPingCount: int
-#     logTLSErrors: bool
+class KeepAliveOpts(BaseModel):
+    keepIdle: int
+    keepIntvl: int
+    keepCnt: int
 
+class NetworkConfig(BaseModel):
+    socksProxy: Optional[SocksProxyWithAuth]
+    socksMode: SocksMode
+    hostMode: HostMode
+    requiredHostMode: bool
+    sessionMode: TransportSessionMode
+    smpProxyMode: SMPProxyMode
+    smpProxyFallback: SMPProxyFallback
+    smpWebPortServers: SMPWebPortServers
+    tcpConnectTimeout: int
+    tcpTimeout: int
+    tcpTimeoutPerKb: int
+    rcvConcurrency: int
+    tcpKeepAlive: Optional[KeepAliveOpts]
+    smpPingInterval: int
+    smpPingCount: int
+    logTLSErrors: bool
 
-# class AppSettings(BaseModel):
-#     appPlatform: Optional[AppPlatform]
-#     networkConfig: Optional[NetworkConfig]
-#     networkProxy: Optional[NetworkProxy]
-#     privacyEncryptLocalFiles: Optional[bool]
-#     privacyAskToApproveRelays: Optional[bool]
-#     privacyAcceptImages: Optional[bool]
-#     privacyLinkPreviews: Optional[bool]
-#     privacyShowChatPreviews: Optional[bool]
-#     privacySaveLastDraft: Optional[bool]
-#     privacyProtectScreen: Optional[bool]
-#     privacyMediaBlurRadius: Optional[int]
-#     notificationMode: Optional[NotificationMode]
-#     notificationPreviewMode: Optional[NotificationPreviewMode]
-#     webrtcPolicyRelay: Optional[bool]
-#     webrtcICEServers: Optional[list[str]]
-#     confirmRemoteSessions: Optional[bool]
-#     connectRemoteViaMulticast: Optional[bool]
-#     connectRemoteViaMulticastAuto: Optional[bool]
-#     developerTools: Optional[bool]
-#     confirmDBUpgrades: Optional[bool]
-#     androidCallOnLockScreen: Optional[LockScreenCalls]
-#     iosCallKitEnabled: Optional[bool]
-#     iosCallKitCallsInRecents: Optional[bool]
-#     uiProfileImageCornerRadius: Optional[float]
-#     uiChatItemRoundness: Optional[float]
-#     uiChatItemTail: Optional[bool]
-#     uiColorScheme: Optional[UIColorScheme]
-#     uiDarkColorScheme: Optional[DarkColorScheme]
-#     uiCurrentThemeIds: Optional[(Map ThemeColorScheme Text)]
-#     uiThemes: Optional[list[UITheme]]
-#     oneHandUI: Optional[bool]
-#     chatBottomBar: Optional[bool]
+class SimpleNetCfg(BaseModel):
+    socksProxy: Optional[SocksProxyWithAuth]
+    socksMode: SocksMode
+    hostMode: HostMode
+    requiredHostMode: bool
+    smpProxyMode: Optional[SMPProxyMode]
+    smpProxyFallback: Optional[SMPProxyFallback]
+    smpWebPortServers: SMPWebPortServers
+    tcpTimeout: Optional[int]  # Multiplied by 1,000,000(?)
+    logTLSErrors: bool
+
+    def __str__(self) -> str:
+        # TODO default values?
+        socksProxy = "socks=" + ("off" if self.socksProxy is None else self.socksProxy)
+        socksMode = " socks-mode=" + self.socksMode
+        hostMode = " host-mode=" + self.hostMode
+        requiredHostMode = " required-host-mode" if self.requiredHostMode else ""
+        smpProxyMode = (" smp-proxy=" + self.smpProxyMode) if self.smpProxyMode is not None else ""
+        smpProxyFallback = (" smp-proxy-fallback=" + self.smpProxyFallback) if self.smpProxyFallback is not None else ""
+        smpWebPortServers = (" smp-web-port-servers=" + self.smpWebPortServers) if self.smpWebPortServers is not None else ""
+        tcpTimeout = (f" timeout={self.tcpTimeout}") if self.tcpTimeout is not None else ""
+        logTLSErrors = f" log={to_on_off(self.logTLSErrors)}"
+
+        return socksProxy + socksMode + hostMode + requiredHostMode + smpProxyMode + smpProxyFallback + smpWebPortServers + tcpTimeout + logTLSErrors
 
 ChatType = Literal["direct", "group", "local", "contactRequest", "contactConnection"]
 
@@ -556,6 +552,151 @@ class UIThemeEntityOverrides(BaseModel):
     light: Optional[UIThemeEntityOverride]
     dark: Optional[UIThemeEntityOverride]
 
+# class UpdatedUserOperatorServers(BaseModel):
+#     operator: Optional[ServerOperator]
+#     smpServers: list[AUserServer ''PSMP]
+#     xftpServers: list[AUserServer ''PXFTP]
+
+MsgFilter = Literal["none", "all", "mentions"]
+
+AProtocolType = Literal["smp", "ntf", "xftp"]
+AProtoServerWithAuth = str  # TODO validation
+
+GroupFeatureEnabled = Literal["on", "off"]
+
+class TimedMessagesGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    ttl: Optional[int]
+
+class DirectMessagesGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+
+class FullDeleteGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+
+class ReactionsGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+
+class VoiceGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+
+class FilesGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+
+class SimplexLinksGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+
+class ReportsGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+
+class HistoryGroupPreference(BaseModel):
+    enable: GroupFeatureEnabled
+
+class GroupPreferences(BaseModel):
+    timedMessages: Optional[TimedMessagesGroupPreference]
+    directMessages: Optional[DirectMessagesGroupPreference]
+    fullDelete: Optional[FullDeleteGroupPreference]
+    reactions: Optional[ReactionsGroupPreference]
+    voice: Optional[VoiceGroupPreference]
+    files: Optional[FilesGroupPreference]
+    simplexLinks: Optional[SimplexLinksGroupPreference]
+    reports: Optional[ReportsGroupPreference]
+    history: Optional[HistoryGroupPreference]
+
+MemberCriteria = Literal["all"]
+
+class GroupMemberAdmission(BaseModel):
+    review: Optional[MemberCriteria]
+
+class GroupProfile(BaseModel):
+    displayName: GroupName
+    fullName: str
+    description: Optional[str]
+    image: Optional[ImageData]
+    groupPreferences: Optional[GroupPreferences]
+    memberAdmission: Optional[GroupMemberAdmission]
+
+DarkColorScheme = Literal["DARK", "BLACK", "SIMPLEX"]
+ThemeColorScheme = Union[Literal["LIGHT"], DarkColorScheme]
+UIColorScheme = Union[Literal["SYSTEM"], ThemeColorScheme]
+
+class UITheme(BaseModel):
+    themeId: str
+    base: ThemeColorScheme
+    wallpaper: Optional[ChatWallpaper]
+    colors: UIColors
+
+AppPlatform = Literal["iOS", "android", "desktop"]
+NetworkProxyAuth = Literal["username", "isolate"]
+NotificationMode = Literal["off", "periodic", "instant"]
+NotificationPreviewMode = Literal["hidden", "contant", "message"]
+LockScreenCalls = Literal["disable", "show", "accept"]
+
+class NetworkProxy(BaseModel):
+    host: str
+    port: int
+    auth: NetworkProxyAuth
+    username: str
+    password: str
+
+class AppSettings(BaseModel):
+    appPlatform: Optional[AppPlatform]
+    networkConfig: Optional[NetworkConfig]
+    networkProxy: Optional[NetworkProxy]
+    privacyEncryptLocalFiles: Optional[bool]
+    privacyAskToApproveRelays: Optional[bool]
+    privacyAcceptImages: Optional[bool]
+    privacyLinkPreviews: Optional[bool]
+    privacyShowChatPreviews: Optional[bool]
+    privacySaveLastDraft: Optional[bool]
+    privacyProtectScreen: Optional[bool]
+    privacyMediaBlurRadius: Optional[int]
+    notificationMode: Optional[NotificationMode]
+    notificationPreviewMode: Optional[NotificationPreviewMode]
+    webrtcPolicyRelay: Optional[bool]
+    webrtcICEServers: Optional[list[str]]
+    confirmRemoteSessions: Optional[bool]
+    connectRemoteViaMulticast: Optional[bool]
+    connectRemoteViaMulticastAuto: Optional[bool]
+    developerTools: Optional[bool]
+    confirmDBUpgrades: Optional[bool]
+    androidCallOnLockScreen: Optional[LockScreenCalls]
+    iosCallKitEnabled: Optional[bool]
+    iosCallKitCallsInRecents: Optional[bool]
+    uiProfileImageCornerRadius: Optional[float]
+    uiChatItemRoundness: Optional[float]
+    uiChatItemTail: Optional[bool]
+    uiColorScheme: Optional[UIColorScheme]
+    uiDarkColorScheme: Optional[DarkColorScheme]
+    uiCurrentThemeIds: Optional[dict[ThemeColorScheme, str]]
+    uiThemes: Optional[list[UITheme]]
+    oneHandUI: Optional[bool]
+    chatBottomBar: Optional[bool]
+
+ConnLinkContact = str  # TODO never used. Set to str because typescript library does it
+
+class Profile(BaseModel):
+    displayName: ContactName
+    fullName: str
+    image: Optional[ImageData]
+    contactLink: Optional[ConnLinkContact]
+    preferences: Optional[Preferences]
+
+class NewUser(BaseModel):
+    profile: Optional[Profile]
+    pastTimestamp: bool
+
+class PaginationByTime(BaseModel):
+    count: int
+    type: Literal["before", "after", "last"]
+    # Not relevant for "last"
+    time: Optional[str]  # TODO
+
 def quote_display_name(name: str) -> str:
     # TODO address minor difference between Haskell isSpace and python str.isspace
     if all(not c.isspace() for c in name) and "," not in name:
@@ -582,6 +723,12 @@ class BaseChatCommand(BaseModel, ABC):
 
 class ShowActiveUser(BaseChatCommand):
     def __str__(self) -> str: return "/user"
+
+class CreateActiveUser(BaseChatCommand):
+    new_user: NewUser
+
+    def __str__(self) -> str:
+        return f"/_create user {self.new_user.model_dump_json()}"
 
 class ListUsers(BaseChatCommand):
     def __str__(self) -> str: return "/users"
@@ -819,6 +966,19 @@ class ExecAgentStoreSQL(BaseChatCommand):
     def __str__(self) -> str:
         return f"/sql agent {self.query}"
 
+class APISaveAppSettings(BaseChatCommand):
+    settings: AppSettings
+
+    def __str__(self) -> str:
+        return f"/_save app settings{self.settings.model_dump_json()}"
+
+class APIGetAppSettings(BaseChatCommand):
+    settings: Optional[AppSettings]
+
+    def __str__(self) -> str:
+        settings = (" " + self.settings.model_dump_json()) if self.settings is not None else ""
+        return f"/_get app settings{settings}"
+
 class APIGetChatTags(BaseChatCommand):
     user_id: UserId
 
@@ -1019,6 +1179,14 @@ class APIAddMember(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_add #{self.group_id} {self.contact_id} {self.role}"
 
+class APIJoinGroup(BaseChatCommand):
+    group_id: GroupId
+    # Always "all"
+    # enable_ntfs: MsgFilter
+
+    def __str__(self) -> str:
+        return f"/_join #{self.group_id}"
+
 class APIAcceptMember(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
@@ -1073,6 +1241,44 @@ class APICreateMemberContact(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_create member contact #{self.group_id} {self.member_id}"
 
+class GetUserProtoServers(BaseChatCommand):
+    protocol: AProtocolType
+
+    def __str__(self) -> str:
+        if self.protocol == "smp":      t = "smp"
+        elif self.protocol == "xftp":   t = "xftp"
+        else:
+            # TODO why no ntf?
+            raise ValueError(f"Invalid protocol: {self.protocol}")
+
+        return f"/{t}"
+
+class SetUserProtoServers(BaseChatCommand):
+    protocol: AProtocolType
+    servers: list[AProtoServerWithAuth]
+
+    def __str__(self) -> str:
+        if self.protocol == "smp":      t = "smp"
+        elif self.protocol == "xftp":   t = "xftp"
+        else:
+            # TODO why no ntf?
+            raise ValueError(f"Invalid protocol: {self.protocol}")
+
+        return f"/{t} {' '.join(self.servers)}"
+
+class APITestProtoServer(BaseChatCommand):
+    user_id: UserId
+    server: AProtoServerWithAuth
+
+    def __str__(self) -> str:
+        return f"/_server test {self.user_id} {self.server}"
+
+# class TestProtoServer(BaseChatCommand):
+#     server: AProtoServerWithAuth
+
+#     def __str__(self) -> str:
+#         return ""
+
 class APIGetServerOperators(BaseChatCommand):
     def __str__(self) -> str: return "/_operators"
 
@@ -1098,8 +1304,10 @@ class APISetChatItemTTL(BaseChatCommand):
     def __str__(self) -> str:
         return f"/_ttl {self.user_id} {self.new_ttl}"
 
+ciTTL = Literal["day", "week", "month", "year", "none"]
+
 class SetChatItemTTL(BaseChatCommand):
-    new_ttl: Literal["day", "week", "month", "year", "none"]
+    new_ttl: ciTTL
 
     def __str__(self) -> str:
         return f"/ttl {self.new_ttl}"
@@ -1121,6 +1329,32 @@ class APISetChatTTL(BaseChatCommand):
     def __str__(self) -> str:
         ttl = "default" if self.new_ttl is None else str(self.new_ttl)
         return f"/_ttl {self.user_id} {self.chat_ref} {ttl}"
+
+class SetChatTTL(BaseChatCommand):
+    chat_name: ChatName
+    new_ttl: Optional[ciTTL]
+
+    def __str__(self) -> str:
+        ttl = self.new_ttl if self.new_ttl is not None else "default"
+        return f"/ttl {self.chat_name} {ttl}"
+
+class GetChatTTL(BaseChatCommand):
+    chat_name: ChatName
+
+    def __str__(self) -> str:
+        return f"/ttl {self.chat_name}"
+
+class APISetNetworkConfig(BaseChatCommand):
+    config: NetworkConfig
+
+    def __str__(self) -> str:
+        return f"/_network {self.config.model_dump_json()}"
+
+class SetNetworkConfig(BaseChatCommand):
+    config: SimpleNetCfg
+
+    def __str__(self) -> str:
+        return f"/network {self.config}"
 
 class APIGetNetworkConfig(BaseChatCommand):
     def __str__(self) -> str: return "/network"
@@ -1571,6 +1805,26 @@ class DeleteMemberMessage(BaseChatCommand):
         msg = self.deleted_msg
 
         return f"\\\\#{group} @{contact} {msg}"
+
+class APINewGroup(BaseChatCommand):
+    user_id: UserId
+    incognito: IncognitoEnabled
+    group_profile: GroupProfile
+
+    def __str__(self) -> str:
+        return f"/_group {self.user_id} incognito={to_on_off(self.incognito)} {self.group_profile.model_dump_json()}"
+
+class NewGroup(BaseChatCommand):
+    incognito: IncognitoEnabled
+    group_profile: GroupProfile  # TODO only displayName and fullName are used
+
+    def __str__(self) -> str:
+        incognito = " incognito" if self.incognito else ""
+        display_name = quote_display_name(self.group_profile.displayName)
+        full_name = (" " + self.group_profile.fullName) if self.group_profile.fullName is not None else ""
+        profile = display_name + full_name
+
+        return f"/group{incognito} #{profile}"
 
 class AddMember(BaseChatCommand):
     group_name: GroupName
