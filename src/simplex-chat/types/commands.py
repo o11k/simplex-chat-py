@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Literal, Optional, TypeVar, Union, Callable
+from typing import Annotated, Any, Literal, Optional, TypeVar, Union, Callable
 from abc import ABC, abstractmethod
 import sys
 
@@ -722,9 +722,9 @@ def AtakeTill(): ...
 def char_(c: str) -> str: return c  # Can also return ""
 def textP(s: str) -> str: return s
 def strP(s: str) -> str: return s  # TODO base64?
-def jsonP(obj: Union[BaseModel, str]) -> str:
+def jsonP(obj: Any) -> str:
     if isinstance(obj, BaseModel): return obj.model_dump_json()
-    elif isinstance(obj, str): return json.dumps(obj)
+    else: return json.dumps(obj)
 def stringP(s: str) -> str: return s
 def _strP(): ...
 
@@ -816,13 +816,13 @@ class APISetActiveUser(BaseChatCommand):
     user_id: UserId
     user_pwd: Optional[UserPwd]
     def format(self) -> str:
-        return "/_user " + A.decimal(self.user_id) + optional(self.user_pwd, lambda p: A.space+jsonP(p))
+        return "/_user " + A.decimal(self.user_id) + optional(self.user_pwd, lambda p: A.space + jsonP(p))
 
 class SetActiveUser(BaseChatCommand):
     user_name: UserName
     user_pwd: Optional[UserPwd]
     def format(self) -> str:
-        return "/user " + displayNameP(self.user_name) + optional(self.user_pwd, lambda p: A.space+pwdP(p))
+        return "/user " + displayNameP(self.user_name) + optional(self.user_pwd, lambda p: A.space + pwdP(p))
 
 class SetAllContactReceipts(BaseChatCommand):
     on_or_off: bool
@@ -896,10 +896,7 @@ class APIDeleteUser(BaseChatCommand):
     delete_smp_queues: bool
     user_pwd: Optional[UserPwd]
     def format(self) -> str:
-        return "/_delete user " + \
-            A.decimal(self.user_id) + \
-            " del_smp=" + onOffP(self.delete_smp_queues) + \
-            optional(self.user_pwd, lambda p: A.space + jsonP(p))
+        return "/_delete user " + A.decimal(self.user_id) + " del_smp=" + onOffP(self.delete_smp_queues) + optional(self.user_pwd, lambda p: A.space + jsonP(p))
 
 class DeleteUser(BaseChatCommand):
     user_name: UserName
@@ -907,13 +904,11 @@ class DeleteUser(BaseChatCommand):
     # delete_smp_queues: bool = True
     user_pwd: Optional[UserPwd]
     def format(self) -> str:
-        return "/delete user " + \
-            displayNameP(self.user_name) + \
-            optional(self.user_pwd, lambda p: A.space + pwdP(p))
+        return "/delete user " + displayNameP(self.user_name) + optional(self.user_pwd, lambda p: A.space + pwdP(p))
 
 class StartChat(BaseChatCommand):
     main_app: bool
-    enable_snd_files: bool
+    enable_snd_files: bool  # Default =main_app
     def format(self) -> str:
         return "/_start " + \
             "main=" + onOffP(self.main_app) + \
@@ -967,14 +962,12 @@ class APISetAppFilePaths(BaseChatCommand):
 class APISetEncryptLocalFiles(BaseChatCommand):
     on_or_off: bool
     def format(self) -> str:
-        return f"/_files_encrypt " + onOffP(self.on_or_off)
+        return "/_files_encrypt " + onOffP(self.on_or_off)
 
 class SetContactMergeEnabled(BaseChatCommand):
     on_or_off: bool
     def format(self) -> str:
-        return f"/contact_merge " + onOffP(self.on_or_off)
-
-#if !defined(dbPostgres)
+        return "/contact_merge " + onOffP(self.on_or_off)
 
 class APIExportArchive(BaseChatCommand):
     config: ArchiveConfig
@@ -1008,8 +1001,6 @@ class SlowSQLQueries(BaseChatCommand):
     def format(self) -> str:
         return "/sql slow"
 
-#endif
-
 class ExecChatStoreSQL(BaseChatCommand):
     query: str
     def format(self) -> str:
@@ -1033,7 +1024,35 @@ class APIGetAppSettings(BaseChatCommand):
 class APIGetChatTags(BaseChatCommand):
     user_id: UserId
     def format(self) -> str:
-        return f"/_get tags " + A.decimal(self.user_id)
+        return "/_get tags " + A.decimal(self.user_id)
+
+class APIGetChats(BaseChatCommand):
+    user_id: UserId
+    pending_connections: bool  # Default False
+    pagination: PaginationByTime  # Default PTLast 5000
+    query: ChatListQuery  # Default clqNoFilters
+    def format(self) -> str:
+        return "/_get chats " \
+        + (
+               A.decimal(self.user_id)
+              + (" pcc=on"  if self.pending_connections else " pcc=off")
+              + (A.space + paginationByTimeP(self.pagination))
+              + (A.space + jsonP(self.query))
+        )
+
+class APIGetChat(BaseChatCommand):
+    chat_ref: ChatRef
+    msg_content_tag: Optional[MsgContentTag]
+    pagination: ChatPagination
+    search: Optional[str]
+    def format(self) -> str:
+        return "/_get chat " + chatRefP(self.chat_ref) + optional(self.msg_content_tag, lambda t: " content=" + strP(t)) + A.space + chatPaginationP(self.pagination) + optional(self.search, lambda s: " search=" + stringP(s))
+
+class APIGetChatItems(BaseChatCommand):
+    pagination: ChatPagination
+    search: Optional[str]
+    def format(self) -> str:
+        return "/_get items " + chatPaginationP(self.pagination) + optional(self.search, lambda s: " search=" + stringP(s))
 
 class APIGetChatItemInfo(BaseChatCommand):
     chat_ref: ChatRef
@@ -1041,15 +1060,126 @@ class APIGetChatItemInfo(BaseChatCommand):
     def format(self) -> str:
         return "/_get item info " + chatRefP(self.chat_ref) + A.space + A.decimal(self.chat_item_id)
 
+class APISendMessages(BaseChatCommand):
+    send_ref: SendRef
+    live_message: bool
+    ttl: Optional[int]
+    composed_messages: list[ComposedMessage]  # NonEmpty
+    def format(self) -> str:
+        return "/_send " + sendRefP(self.send_ref) + liveMessageP(self.live_message) + sendMessageTTLP(self.ttl) + " json " + jsonP(self.composed_messages)
+
+class APICreateChatTag(BaseChatCommand):
+    chat_tag_data: ChatTagData
+    def format(self) -> str:
+        return "/_create tag " + jsonP(self.chat_tag_data)
+
+class APISetChatTags(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_tag_ids: Optional[list[ChatTagId]]  # NonEmpty
+    def format(self) -> str:
+        # TODO _strP(list[ChatTagId]) ???
+        return "/_tags " + chatRefP(self.chat_ref) + optional(self.chat_tag_ids, lambda t: _strP(t))
+
 class APIDeleteChatTag(BaseChatCommand):
     chat_tag_id: ChatTagId
     def format(self) -> str:
         return "/_delete tag " + A.decimal(self.chat_tag_id)
 
+class APIUpdateChatTag(BaseChatCommand):
+    chat_tag_id: ChatTagId
+    chat_tag_data: ChatTagData
+    def format(self) -> str:
+        return "/_update tag " + A.decimal(self.chat_tag_id) + A.space + jsonP(self.chat_tag_data)
+
+class APIReorderChatTags(BaseChatCommand):
+    chat_tag_ids: list[ChatTagId]  # NonEmpty
+    def format(self) -> str:
+        return "/_reorder tags " + strP(self.chat_tag_ids)
+
+class APICreateChatItems(BaseChatCommand):
+    note_folder_id: NoteFolderId
+    composed_messages: list[ComposedMessage]  # NonEmpty
+    def format(self) -> str:
+        return "/_create *" + A.decimal(self.note_folder_id) + " json " + jsonP(self.composed_messages)
+
+class APIReportMessage(BaseChatCommand):
+    group_id: GroupId
+    chat_item_id: ChatItemId
+    report_reason: ReportReason
+    report_text: str
+    def format(self) -> str:
+        return "/_report #" + A.decimal(self.group_id) + A.space + A.decimal(self.chat_item_id) + " reason=" + strP(self.report_reason) + A.space + textP(self.report_text)
+
+class ReportMessage(BaseChatCommand):
+    group_name: GroupName
+    contact_name: Optional[ContactName]
+    report_reason: ReportReason
+    reported_message: str
+    def format(self) -> str:
+        return "/report #" + displayNameP(self.group_name) + optional(self.contact_name, lambda n: " @" + displayNameP(n)) + _strP(self.report_reason) + A.space + msgTextP(self.reported_message)
+
+class APIUpdateChatItem(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_item_id: ChatItemId
+    live_message: bool
+    updated_message: UpdatedMessage
+    def format(self) -> str:
+        return "/_update item " + chatRefP(self.chat_ref) + A.space + A.decimal(self.chat_item_id) + liveMessageP(self.live_message) + " json" + jsonP(self.updated_message)
+
+class APIDeleteChatItem(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_item_id: list[ChatItemId]  # NonEmpty
+    mode: CIDeleteMode
+    def format(self) -> str:
+        return "/_delete item " + chatRefP(self.chat_ref) + _strP(self.chat_item_id) + _strP(self.mode)
+
+class APIDeleteMemberChatItem(BaseChatCommand):
+    group_id: GroupId
+    chat_item_id: list[ChatItemId]  # NonEmpty
+    def format(self) -> str:
+        return "/_delete member item #" + A.decimal(self.group_id) + _strP(self.chat_item_id)
+
 class APIArchiveReceivedReports(BaseChatCommand):
     group_id: GroupId
     def format(self) -> str:
         return "/_archive reports #" + A.decimal(self.group_id)
+
+class APIDeleteReceivedReports(BaseChatCommand):
+    group_id: GroupId
+    chat_item_id: list[ChatItemId]  # NonEmpty
+    mode: CIDeleteMode
+    def format(self) -> str:
+        return "/_delete reports #" + A.decimal(self.group_id) + _strP(self.chat_item_id) + _strP(self.mode)
+
+class APIChatItemReaction(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_item_id: ChatItemId
+    add: bool
+    reaction: MsgReaction  # knownReaction?
+    def format(self) -> str:
+        return "/_reaction " + chatRefP(self.chat_ref) + A.space + A.decimal(self.chat_item_id) + A.space + onOffP(self.add) + A.space + jsonP(self.reaction)
+
+class APIGetReactionMembers(BaseChatCommand):
+    user_id: UserId
+    group_id: GroupId
+    chat_item_id: ChatItemId
+    reaction: MsgReaction  # knownReaction?
+    def format(self) -> str:
+        return "/_reaction members " + A.decimal(self.user_id) + " #" + A.decimal(self.group_id) + A.space + A.decimal(self.chat_item_id) + A.space + jsonP(self.reaction)
+
+class APIPlanForwardChatItems(BaseChatCommand):
+    from_chat_ref: ChatRef
+    chat_item_ids: list[ChatItemId]  # NonEmpty
+    def format(self) -> str:
+        return "/_forward plan " + chatRefP(self.from_chat_ref) + _strP(self.chat_item_ids)
+
+class APIForwardChatItems(BaseChatCommand):
+    to_chat_ref: ChatRef
+    from_chat_ref: ChatRef
+    chat_item_ids: list[ChatItemId]  # NonEmpty
+    ttl: Optional[int]
+    def format(self) -> str:
+        return "/_forward " + chatRefP(self.to_chat_ref) + A.space + chatRefP(self.from_chat_ref) + _strP(self.chat_item_ids) + sendMessageTTLP(self.ttl)
 
 class APIUserRead(BaseChatCommand):
     user_id: UserId
@@ -1062,8 +1192,14 @@ class UserRead(BaseChatCommand):
 
 class APIChatRead(BaseChatCommand):
     chat_ref: ChatRef
-    def fromat(self) -> str:
+    def format(self) -> str:
         return "/_read chat " + chatRefP(self.chat_ref)
+
+class APIChatItemsRead(BaseChatCommand):
+    chat_ref: ChatRef
+    chat_item_id: list[ChatItemId] # NonEmpty
+    def format(self) -> str:
+        return "/_read chat items " + chatRefP(self.chat_ref) + _strP(self.chat_item_id)
 
 class APIChatUnread(BaseChatCommand):
     chat_ref: ChatRef
@@ -1104,7 +1240,7 @@ class SendCallInvitation(BaseChatCommand):
     # Always type=video encrypted=true
     # call_type: CallType
     def format(self) -> str:
-        return "/call " + char_("@") + displayNameP(self.contact_name)
+        return "/call " + char_('@') + displayNameP(self.contact_name)
 
 class APIRejectCall(BaseChatCommand):
     contact_id: ContactId
@@ -1115,7 +1251,7 @@ class APISendCallOffer(BaseChatCommand):
     contact_id: ContactId
     offer: WebRTCCallOffer
     def format(self) -> str:
-        return f"/_call offer @" + A.decimal(self.contact_id) + A.space + jsonP(self.offer)
+        return "/_call offer @" + A.decimal(self.contact_id) + A.space + jsonP(self.offer)
 
 class APISendCallAnswer(BaseChatCommand):
     contact_id: ContactId
@@ -1148,6 +1284,12 @@ class APIGetNetworkStatuses(BaseChatCommand):
     def format(self) -> str:
         return "/_network_statuses"
 
+class APIUpdateProfile(BaseChatCommand):
+    user_id: UserId
+    profile: Profile
+    def format(self) -> str:
+        return "/_profile " + A.decimal(self.user_id) + A.space + jsonP(self.profile)
+
 class APISetContactPrefs(BaseChatCommand):
     contact_id: ContactId
     preferences: Preferences
@@ -1158,41 +1300,69 @@ class APISetContactAlias(BaseChatCommand):
     contact_id: ContactId
     local_alias: LocalAlias
     def format(self) -> str:
-        return "/_set alias @" + A.decimal(self.contact_id) + A.space + textP(self.local_alias)
+        return "/_set alias @" + A.decimal(self.contact_id) + (A.space + textP(self.local_alias) if self.local_alias else "")
 
 class APISetGroupAlias(BaseChatCommand):
     group_id: GroupId
     local_alias: LocalAlias
     def format(self) -> str:
-        return "/_set alias #" + A.decimal(self.group_id) + A.space + textP(self.local_alias)
+        return "/_set alias #" + A.decimal(self.group_id) + (A.space + textP(self.local_alias) if self.local_alias else "")
 
 class APISetConnectionAlias(BaseChatCommand):
     connection_id: int
     local_alias: LocalAlias
     def format(self) -> str:
-        return "/_set alias :" + A.decimal(self.connection_id) + A.space + textP(self.local_alias)
+        return "/_set alias :" + A.decimal(self.connection_id) + (A.space + textP(self.local_alias) if self.local_alias else "")
 
 class APISetUserUIThemes(BaseChatCommand):
     user_id: UserId
-    themes: Optional[UIThemeEntityOverrides]
+    ui_themes: Optional[UIThemeEntityOverrides]
     def format(self) -> str:
-        return "/_set theme user " + A.decimal(self.user_id) + optional(self.themes, lambda t: A.space + jsonP(t))
+        return "/_set theme user " + A.decimal(self.user_id) + optional(self.ui_themes, lambda t: A.space + jsonP(t))
 
 class APISetChatUIThemes(BaseChatCommand):
     chat_ref: ChatRef
-    themes: Optional[UIThemeEntityOverrides]
+    ui_themes: Optional[UIThemeEntityOverrides]
     def format(self) -> str:
-        return "/_set theme " + chatRefP(self.chat_ref) + optional(self.themes, lambda t: A.space + jsonP(t))
+        return "/_set theme " + chatRefP(self.chat_ref) + optional(self.ui_themes, lambda t: A.space + jsonP(t))
 
 class APIGetNtfToken(BaseChatCommand):
     def format(self) -> str:
         return "/_ntf get"
 
-class APIGetNtfConns(BaseChatCommand):
+class APIRegisterToken(BaseChatCommand):
+    device_token: DeviceToken
+    notifications_mode: NotificationsMode
+    def format(self) -> str:
+        return "/_ntf register " + strP_(self.device_token) + strP(self.notifications_mode)
+
+class APIVerifyToken(BaseChatCommand):
+    device_token: DeviceToken
     nonce: CbNonce
     enc_ntf_info: str
     def format(self) -> str:
+        return "/_ntf verify " + strP(self.device_token) + A.space + strP(self.nonce) + A.space + strP(self.enc_ntf_info)
+
+class APICheckToken(BaseChatCommand):
+    device_token: DeviceToken
+    def format(self) -> str:
+        return "/_ntf check " + strP(self.device_token)
+
+class APIDeleteToken(BaseChatCommand):
+    device_token: DeviceToken
+    def format(self) -> str:
+        return "/_ntf delete " + strP(self.device_token)
+
+class APIGetNtfConns(BaseChatCommand):
+    nonce: CbNonce
+    enc_ntf_info: ByteString
+    def format(self) -> str:
         return "/_ntf conns " + strP(self.nonce) + A.space + strP(self.enc_ntf_info)
+
+class APIGetConnNtfMessages(BaseChatCommand):
+    conn_msgs: list[ConnMsgReq]  # NonEmpty
+    def format(self) -> str:
+        return "/_ntf conn messages " + connMsgsP(self.conn_msgs)
 
 class APIAddMember(BaseChatCommand):
     group_id: GroupId
@@ -1215,6 +1385,28 @@ class APIAcceptMember(BaseChatCommand):
     def format(self) -> str:
         return "/_accept member #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id) + memberRole(self.role)
 
+class APIMembersRole(BaseChatCommand):
+    group_id: GroupId
+    member_ids: list[GroupMemberId]  # NonEmpty
+    role: GroupMemberRole
+    def format(self) -> str:
+        return "/_member role #" + A.decimal(self.group_id) + _strP(self.member_ids) + memberRole(self.role)
+
+class APIBlockMembersForAll(BaseChatCommand):
+    group_id: GroupId
+    member_ids: list[GroupMemberId]  # NonEmpty
+    blocked: bool
+    def format(self) -> str:
+        return "/_block #" + A.decimal(self.group_id) + _strP(self.member_ids) + " blocked=" + onOffP(self.blocked)
+
+# TODO
+class APIRemoveMembers(BaseChatCommand):
+    group_id: GroupId
+    member_ids: Set GroupMemberId
+    with_messages: Bool
+    def format(self) -> str:
+        return "/_remove #" + A.decimal + _strP + (" messages=" + onOffP <|> pure False)
+
 class APILeaveGroup(BaseChatCommand):
     group_id: GroupId
     def format(self) -> str:
@@ -1225,9 +1417,15 @@ class APIListMembers(BaseChatCommand):
     def format(self) -> str:
         return "/_members #" + A.decimal(self.group_id)
 
+class APIUpdateGroupProfile(BaseChatCommand):
+    group_id: GroupId
+    profile: GroupProfile
+    def format(self) -> str:
+        return "/_group_profile #" + A.decimal(self.group_id) + A.space + jsonP(self.profile)
+
 class APICreateGroupLink(BaseChatCommand):
     group_id: GroupId
-    role: GroupMemberRole = "member"
+    role: GroupMemberRole  # Default "member"
     short: CreateShortLink
     def format(self) -> str:
         return "/_create link #" + A.decimal(self.group_id) + memberRole(self.role) + shortOnOffP(self.short)
@@ -1245,64 +1443,83 @@ class APIDeleteGroupLink(BaseChatCommand):
 
 class APIGetGroupLink(BaseChatCommand):
     group_id: GroupId
-
-    def __str__(self) -> str:
-        return f"/_delete link #{self.group_id}"
+    def format(self) -> str:
+        return "/_get link #" + A.decimal(self.group_id)
 
 class APICreateMemberContact(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
+    def format(self) -> str:
+        return "/_create member contact #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
-    def __str__(self) -> str:
-        return f"/_create member contact #{self.group_id} {self.member_id}"
+class APISendMemberContactInvitation(BaseChatCommand):
+    contact_id: ContactId
+    msg_content: Optional[MsgContent]
+    def format(self) -> str:
+        return "/_invite member contact @" + A.decimal(self.contact_id) + optional(self.msg_content, lambda c: A.space + msgContentP(c))
 
 class GetUserProtoServers(BaseChatCommand):
-    protocol: AProtocolType
-
-    def __str__(self) -> str:
-        if self.protocol == "smp":      t = "smp"
-        elif self.protocol == "xftp":   t = "xftp"
+    protocol_type: AProtocolType
+    def format(self) -> str:
+        if self.protocol_type == "smp":
+            return "/smp"
+        elif self.protocol_type == "xftp":
+            return "/xftp"
         else:
             # TODO why no ntf?
-            raise ValueError(f"Invalid protocol: {self.protocol}")
+            raise ValueError(f"Invalid protocol type: {self.protocol_type}")
 
-        return f"/{t}"
-
+# TODO
 class SetUserProtoServers(BaseChatCommand):
-    protocol: AProtocolType
-    servers: list[AProtoServerWithAuth]
-
-    def __str__(self) -> str:
-        if self.protocol == "smp":      t = "smp"
-        elif self.protocol == "xftp":   t = "xftp"
-        else:
-            # TODO why no ntf?
-            raise ValueError(f"Invalid protocol: {self.protocol}")
-
-        return f"/{t} {' '.join(self.servers)}"
+    a_protocol_type: AProtocolType
+    a_proto_server_with_auth: list[AProtoServerWithAuth]
+    def format(self) -> str:
+        return "/smp " + ( (AProtocolType SPSMP) . map (AProtoServerWithAuth SPSMP)  protocolServersP)
+        return "/xftp " + ( (AProtocolType SPXFTP) . map (AProtoServerWithAuth SPXFTP)  protocolServersP)
 
 class APITestProtoServer(BaseChatCommand):
     user_id: UserId
     server: AProtoServerWithAuth
+    def format(self) -> str:
+        return "/_server test " + A.decimal(self.user_id) + A.space + strP(self.server)
 
-    def __str__(self) -> str:
-        return f"/_server test {self.user_id} {self.server}"
-
-# class TestProtoServer(BaseChatCommand):
-#     server: AProtoServerWithAuth
-
-#     def __str__(self) -> str:
-#         return ""
+class TestProtoServer(BaseChatCommand):
+    a_proto_server_with_auth: AProtoServerWithAuth
+    def format(self) -> str:
+        return "/smp test " + ( . AProtoServerWithAuth SPSMP  strP)
+        return "/xftp test " + ( . AProtoServerWithAuth SPXFTP  strP)
+        return "/ntf test " + ( . AProtoServerWithAuth SPNTF  strP)
 
 class APIGetServerOperators(BaseChatCommand):
     def format(self) -> str:
         return "/_operators"
 
+class APISetServerOperators(BaseChatCommand):
+    operators: list[ServerOperator]  # NonEmpty
+    def format(self) -> str:
+        return "/_operators " + jsonP(self.operators)
+
+class SetServerOperators(BaseChatCommand):
+    roles: list[ServerOperatorRoles]  # NonEmpty
+    def format(self) -> str:
+        return "/operators " + ( . L.fromList  operatorRolesP `A.sepBy1` A.char ',')
+
 class APIGetUserServers(BaseChatCommand):
     user_id: UserId
+    def format(self) -> str:
+        return "/_servers " + A.decimal(self.user_id)
 
-    def __str__(self) -> str:
-        return f"/_servers {self.user_id}"
+class APISetUserServers(BaseChatCommand):
+    user_id: UserId
+    user_servers: list[UpdatedUserOperatorServers]  # NonEmpty
+    def format(self) -> str:
+        return "/_servers " + A.decimal(self.user_id) + A.space + jsonP(self.user_servers)
+
+class APIValidateServers(BaseChatCommand):
+    user_id: UserId
+    user_servers: list[UpdatedUserOperatorServers]
+    def format(self) -> str:
+        return "/_validate_servers " + A.decimal(self.user_id) + A.space + jsonP(self.user_servers)
 
 class APIGetUsageConditions(BaseChatCommand):
     def format(self) -> str:
@@ -1310,30 +1527,30 @@ class APIGetUsageConditions(BaseChatCommand):
 
 class APISetConditionsNotified(BaseChatCommand):
     condition_id: int
+    def format(self) -> str:
+        return "/_conditions_notified " + A.decimal(self.condition_id)
 
-    def __str__(self) -> str:
-        return f"/_conditions_notified {self.condition_id}"
+class APIAcceptConditions(BaseChatCommand):
+    condition_id: int
+    operator_ids: list[int]  # NonEmpty
+    def format(self) -> str:
+        return "/_accept_conditions " + A.decimal(self.condition_id) + _strP(self.operator_ids)
 
 class APISetChatItemTTL(BaseChatCommand):
     user_id: UserId
     new_ttl: int
-
-    def __str__(self) -> str:
-        return f"/_ttl {self.user_id} {self.new_ttl}"
-
-ciTTL = Literal["day", "week", "month", "year", "none"]
+    def format(self) -> str:
+        return "/_ttl " + A.decimal(self.user_id) + A.space + A.decimal(self.new_ttl)
 
 class SetChatItemTTL(BaseChatCommand):
-    new_ttl: ciTTL
-
-    def __str__(self) -> str:
-        return f"/ttl {self.new_ttl}"
+    new_ttl: int
+    def format(self) -> str:
+        return "/ttl " + ciTTL(self.new_ttl)
 
 class APIGetChatItemTTL(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/_ttl {self.user_id}"
+    def format(self) -> str:
+        return "/_ttl " + A.decimal(self.user_id)
 
 class GetChatItemTTL(BaseChatCommand):
     def format(self) -> str:
@@ -1343,342 +1560,326 @@ class APISetChatTTL(BaseChatCommand):
     user_id: UserId
     chat_ref: ChatRef
     new_ttl: Optional[int]
-
-    def __str__(self) -> str:
-        ttl = "default" if self.new_ttl is None else str(self.new_ttl)
-        return f"/_ttl {self.user_id} {self.chat_ref} {ttl}"
+    def format(self) -> str:
+        return "/_ttl " + A.decimal(self.user_id) + A.space + chatRefP(self.chat_ref) + A.space + ciTTLDecimal(self.new_ttl)
 
 class SetChatTTL(BaseChatCommand):
     chat_name: ChatName
-    new_ttl: Optional[ciTTL]
-
-    def __str__(self) -> str:
-        ttl = self.new_ttl if self.new_ttl is not None else "default"
-        return f"/ttl {self.chat_name} {ttl}"
+    new_ttl: Optional[int]
+    def format(self) -> str:
+        return "/ttl " + chatNameP(self.chat_name) + A.space + ("default" if self.new_ttl is None else ciTTL(self.new_ttl))
 
 class GetChatTTL(BaseChatCommand):
     chat_name: ChatName
-
-    def __str__(self) -> str:
-        return f"/ttl {self.chat_name}"
+    def format(self) -> str:
+        return "/ttl " + chatNameP(self.chat_name)
 
 class APISetNetworkConfig(BaseChatCommand):
     config: NetworkConfig
-
-    def __str__(self) -> str:
-        return f"/_network {self.config.model_dump_json()}"
-
-class SetNetworkConfig(BaseChatCommand):
-    config: SimpleNetCfg
-
-    def __str__(self) -> str:
-        return f"/network {self.config}"
+    def format(self) -> str:
+        return "/_network " + jsonP(self.config)
 
 class APIGetNetworkConfig(BaseChatCommand):
     def format(self) -> str:
         return "/network"
 
+class SetNetworkConfig(BaseChatCommand):
+    config: SimpleNetCfg
+    def format(self) -> str:
+        return "/network " + netCfgP(self.config)
+
+class APISetNetworkInfo(BaseChatCommand):
+    user_network_info: UserNetworkInfo
+    def format(self) -> str:
+        return "/_network info " + jsonP
+
 class ReconnectAllServers(BaseChatCommand):
     def format(self) -> str:
         return "/reconnect"
 
+class ReconnectServer(BaseChatCommand):
+    user_id: UserId
+    smp_server: SMPServer
+    def format(self) -> str:
+        return "/reconnect " + A.decimal + A.space + strP
+
+class APISetChatSettings(BaseChatCommand):
+    chat_ref: ChatRef
+    settings: ChatSettings
+    def format(self) -> str:
+        return "/_settings " + chatRefP + A.space + jsonP
+
+class APISetMemberSettings(BaseChatCommand):
+    group_id: GroupId
+    member_id: GroupMemberId
+    group_member_settings: GroupMemberSettings
+    def format(self) -> str:
+        return "/_member settings #" + A.decimal + A.space + A.decimal + A.space + jsonP
+
 class APIContactInfo(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_info @{self.contact_id}"
+    def format(self) -> str:
+        return "/_info @" + A.decimal(self.contact_id)
 
 class APIGroupInfo(BaseChatCommand):
     group_id: GroupId
-
-    def __str__(self) -> str:
-        return f"/_info #{self.group_id}"
+    def format(self) -> str:
+        return "/_info #" + A.decimal(self.group_id)
 
 class APIGroupMemberInfo(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-
-    def __str__(self) -> str:
-        return f"/_info #{self.group_id} {self.member_id}"
+    def format(self) -> str:
+        return "/_info #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
 class APIContactQueueInfo(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_queue info @{self.contact_id}"
+    def format(self) -> str:
+        return "/_queue info @" + A.decimal(self.contact_id)
 
 class APIGroupMemberQueueInfo(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-
-    def __str__(self) -> str:
-        return f"/_queue info #{self.group_id} {self.member_id}"
+    def format(self) -> str:
+        return "/_queue info #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
 class APISwitchContact(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_switch @{self.contact_id}"
+    def format(self) -> str:
+        return "/_switch @" + A.decimal(self.contact_id)
 
 class APISwitchGroupMember(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-
-    def __str__(self) -> str:
-        return f"/_switch #{self.group_id} {self.member_id}"
+    def format(self) -> str:
+        return "/_switch #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
 class APIAbortSwitchContact(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_abort switch @{self.contact_id}"
+    def format(self) -> str:
+        return "/_abort switch @" + A.decimal(self.contact_id)
 
 class APIAbortSwitchGroupMember(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-
-    def __str__(self) -> str:
-        return f"/_abort switch #{self.group_id} {self.member_id}"
+    def format(self) -> str:
+        return "/_abort switch #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
 class APISyncContactRatchet(BaseChatCommand):
     contact_id: ContactId
     force: bool
-
-    def __str__(self) -> str:
-        force_part = " force=on" if self.force else ""
-        return f"/_sync @{self.contact_id}" + force_part
+    def format(self) -> str:
+        return "/_sync @" + A.decimal(self.contact_id) + (" force=on" if self.force else "")
 
 class APISyncGroupMemberRatchet(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
     force: bool
-
-    def __str__(self) -> str:
-        force_part = " force=on" if self.force else ""
-        return f"/_sync #{self.group_id} {self.member_id}" + force_part
+    def format(self) -> str:
+        return "/_sync #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id) + (" force=on" if self.force else "")
 
 class APIGetContactCode(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_get code @{self.contact_id}"
+    def format(self) -> str:
+        return "/_get code @" + A.decimal(self.contact_id)
 
 class APIGetGroupMemberCode(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-
-    def __str__(self) -> str:
-        return f"/_get code #{self.group_id} {self.member_id}"
+    def format(self) -> str:
+        return "/_get code #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
 class APIVerifyContact(BaseChatCommand):
     contact_id: ContactId
-    verify_code: VerifyCode
-
-    def __str__(self) -> str:
-        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
-        return f"/_verify code @{self.contact_id}" + code_part
+    verify_code: Optional[str]
+    def format(self) -> str:
+        return "/_verify code @" + A.decimal(self.contact_id) + optional(self.verify_code, lambda c: A.space + verifyCodeP(c))
 
 class APIVerifyGroupMember(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-    verify_code: VerifyCode
-
-    def __str__(self) -> str:
-        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
-        return f"/_verify code #{self.group_id} {self.member_id}" + code_part
+    verify_code: Optional[str]
+    def format(self) -> str:
+        return "/_verify code #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id) + optional(self.verify_code, lambda c: A.space + verifyCodeP(c))
 
 class APIEnableContact(BaseChatCommand):
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_enable @{self.contact_id}"
+    def format(self) -> str:
+        return "/_enable @" + A.decimal(self.contact_id)
 
 class APIEnableGroupMember(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
+    def format(self) -> str:
+        return "/_enable #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id)
 
-    def __str__(self) -> str:
-        return f"/_enable #{self.group_id} {self.member_id}"
+class SetShowMessages(BaseChatCommand):
+    chat_name: ChatName
+    msg_filter: MsgFilter
+    def format(self) -> str:
+        if self.msg_filter == "none":
+            return "/mute " + chatNameP(self.chat_name)
+        elif self.msg_filter == "all":
+            return "/unmute " + chatNameP(self.chat_name)
+        elif self.msg_filter == "mentions":
+            return "/unmute mentions " + chatNameP(self.chat_name)
+        else:
+            raise ValueError(f"Invalid message filter: {self.msg_filter}")
+
+class SetSendReceipts(BaseChatCommand):
+    chat_name: ChatName
+    on_or_off: Optional[bool]
+    def format(self) -> str:
+        return "/receipts " + chatNameP(self.chat_name) + " " + (onOffP(self.on_or_off) if self.on_or_off is not None else "default")
 
 class SetShowMemberMessages(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    on_or_off: bool
-
-    def __str__(self) -> str:
-        name = "unblock" if self.on_or_off else "block"
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/{name} #{group} @{contact}"
+    show_messages: bool
+    def format(self) -> str:
+        if not self.show_messages:
+            return "/block #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
+        else:
+            return "/unblock #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class ContactInfo(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/info @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/info " + char_('@') + displayNameP(self.contact_name)
 
 class ShowGroupInfo(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/info #{quote_display_name(self.group_name)}"
+    def format(self) -> str:
+        return "/info #" + displayNameP(self.group_name)
 
 class GroupMemberInfo(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/info #{group} @{contact}"
+    def format(self) -> str:
+        return "/info #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class ContactQueueInfo(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/queue info @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/queue info " + char_('@') + displayNameP(self.contact_name)
 
 class GroupMemberQueueInfo(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/queue info #{group} @{contact}"
+    def format(self) -> str:
+        return "/queue info #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class SwitchContact(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/switch @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/switch " + char_('@') + displayNameP(self.contact_name)
 
 class SwitchGroupMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/switch #{group} @{contact}"
+    def format(self) -> str:
+        return "/switch #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class AbortSwitchContact(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/abort switch @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/abort switch " + char_('@') + displayNameP(self.contact_name)
 
 class AbortSwitchGroupMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/abort switch #{group} @{contact}"
+    def format(self) -> str:
+        return "/abort switch #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class SyncContactRatchet(BaseChatCommand):
     contact_name: ContactName
     force: bool
-
-    def __str__(self) -> str:
-        force_part = " force=on" if self.force else ""
-
-        return f"/sync @{quote_display_name(self.contact_name)}" + force_part
+    def format(self) -> str:
+        return "/sync " + char_('@') + displayNameP(self.contact_name) + (" force=on" if self.force else "")
 
 class SyncGroupMemberRatchet(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
     force: bool
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-        force_part = " force=on" if self.force else ""
-
-        return f"/sync #{group} @{contact}" + force_part
+    def format(self) -> str:
+        return "/sync #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + (" force=on" if self.force else "")
 
 class GetContactCode(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/code @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/code " + char_('@') + displayNameP(self.contact_name)
 
 class GetGroupMemberCode(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/code #{group} @{contact}"
+    def format(self) -> str:
+        return "/code #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
 class VerifyContact(BaseChatCommand):
     contact_name: ContactName
-    verify_code: VerifyCode
-
-    def __str__(self) -> str:
-        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
-
-        return f"/code @{quote_display_name(self.contact_name)}" + code_part
+    verify_code: Optional[str]
+    def format(self) -> str:
+        return "/verify " + char_('@') + displayNameP(self.contact_name) + optional(self.verify_code, lambda c: A.space + verifyCodeP(c))
 
 class VerifyGroupMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    verify_code: VerifyCode
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-        code_part = (" " + self.verify_code) if self.verify_code is not None else ""
-
-        return f"/code #{group} @{contact}" + code_part
+    verify_code: Optional[str]
+    def format(self) -> str:
+        return "/verify #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + optional(self.verify_code, lambda c: A.space + verifyCodeP(c))
 
 class EnableContact(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/enable @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/enable " + char_('@') + displayNameP(self.contact_name)
 
 class EnableGroupMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
+    def format(self) -> str:
+        return "/enable #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/enable #{group} @{contact}"
+HelpSection = Literal[
+    "files",
+    "groups",
+    "contacts",
+    "address",
+    "incognito",
+    "messages",
+    "remote",
+    "settings",
+    "database",
+    "main",
+    "markdown"
+]
 
 class ChatHelp(BaseChatCommand):
-    help_section: Optional[Literal[
-        "files",
-        "groups",
-        "contacts",
-        "address",
-        "incognito",
-        "markdown",
-        "messages",
-        "remote",
-        "settings",
-        "db",
-    ]]
-
-    def __str__(self) -> str:
-        if self.help_section is None:
+    help_section: Optional[HelpSection]
+    def format(self) -> str:
+        if self.help_section is None or self.help_section == "main":
             return "/help"
+        elif self.help_section == "files":
+            return "/help files"
+        elif self.help_section == "groups":
+            return "/help groups"
+        elif self.help_section == "contacts":
+            return "/help contacts"
+        elif self.help_section == "address":
+            return "/help address"
+        elif self.help_section == "incognito":
+            return "/help incognito"
+        elif self.help_section == "messages":
+            return "/help messages"
+        elif self.help_section == "remote":
+            return "/help remote"
+        elif self.help_section == "settings":
+            return "/help settings"
+        elif self.help_section == "database":
+            return "/help db"
         elif self.help_section == "markdown":
             return "/markdown"
-        elif self.help_section == "incognito":
-            return "/incognito"
         else:
-            return f"/help {self.help_section}"
+            raise ValueError(f"Invalid help section: {self.help_section}")
 
 class Welcome(BaseChatCommand):
     def format(self) -> str:
@@ -1688,63 +1889,73 @@ class APIAddContact(BaseChatCommand):
     user_id: UserId
     short: CreateShortLink
     incognito: IncognitoEnabled
-
-    def __str__(self) -> str:
-        short = " short" if self.short else ""
-        incognito = " incognito" if self.incognito else ""
-
-        return f"/_connect {self.user_id} {short} {incognito}"
+    def format(self) -> str:
+        return "/_connect " + A.decimal(self.user_id) + shortOnOffP(self.short) + incognitoOnOffP(self.incognito)
 
 class AddContact(BaseChatCommand):
     short: CreateShortLink
     incognito: IncognitoEnabled
-
-    def __str__(self) -> str:
-        short = " short" if self.short else ""
-        incognito = " incognito" if self.incognito else ""
-
-        return f"/connect {short} {incognito}"
+    def format(self) -> str:
+        return "/connect" + shortP(self.short) + incognitoP(self.incognito)
 
 class APISetConnectionIncognito(BaseChatCommand):
     connection_id: int
     incognito: IncognitoEnabled
-
-    def __str__(self) -> str:
-        return f"/_set incognito :{self.connection_id} {to_on_off(self.incognito)}"
+    def format(self) -> str:
+        return "/_set incognito :" + A.decimal(self.connection_id) + A.space + onOffP(self.incognito)
 
 class APIChangeConnectionUser(BaseChatCommand):
     connection_id: int
-    new_user_id: UserId
+    user_id: UserId
+    def format(self) -> str:
+        return "/_set conn user :" + A.decimal(self.connection_id) + A.space + A.decimal(self.user_id)
 
-    def __str__(self) -> str:
-        return f"/_set conn user :{self.connection_id} {self.new_user_id}"
+class APIConnectPlan(BaseChatCommand):
+    user_id: UserId
+    a_connection_link: AConnectionLink
+    def format(self) -> str:
+        return "/_connect plan " + A.decimal + A.space + strP
+
+class APIConnect(BaseChatCommand):
+    user_id: UserId
+    incognito: IncognitoEnabled
+    a_created_conn_link: Optional[ACreatedConnLink]
+    def format(self) -> str:
+        return "/_connect " + A.decimal + incognitoOnOffP + A.space + connLinkP
+
+class Connect(BaseChatCommand):
+    incognito: IncognitoEnabled
+    a_connection_link: Optional[AConnectionLink]
+    def format(self) -> str:
+        return ("/connect" <|> "/c") + (  incognitoP + A.space + ((Just  strP) <|> A.takeTill isSpace  Nothing))
 
 class APIConnectContactViaAddress(BaseChatCommand):
     user_id: UserId
     incognito: IncognitoEnabled
     contact_id: ContactId
-
-    def __str__(self) -> str:
-        return f"/_connect contact {self.user_id} incognito={to_on_off(self.incognito)} {self.contact_id}"
+    def format(self) -> str:
+        return "/_connect contact " + A.decimal(self.user_id) + incognitoOnOffP(self.incognito) + A.space + A.decimal(self.contact_id)
 
 class ConnectSimplex(BaseChatCommand):
     incognito: IncognitoEnabled
+    def format(self) -> str:
+        return "/simplex" + incognitoP(self.incognito)
 
-    def __str__(self) -> str:
-        incognito = " incognito" if self.incognito else ""
-        return "/simple" + incognito
+class DeleteContact(BaseChatCommand):
+    contact_name: ContactName
+    mode: ChatDeleteMode
+    def format(self) -> str:
+        return "/delete " + char_('@') + displayNameP(self.contact_name) + chatDeleteMode(self.mode)
 
 class ClearContact(BaseChatCommand):
     contact_name: ContactName
-
-    def __str__(self) -> str:
-        return f"/clear @{quote_display_name(self.contact_name)}"
+    def format(self) -> str:
+        return "/clear " + char_('@') + displayNameP(self.contact_name)
 
 class APIListContacts(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/_contacts {self.user_id}"
+    def format(self) -> str:
+        return "/_contacts " + A.decimal(self.user_id)
 
 class ListContacts(BaseChatCommand):
     def format(self) -> str:
@@ -1753,23 +1964,18 @@ class ListContacts(BaseChatCommand):
 class APICreateMyAddress(BaseChatCommand):
     user_id: UserId
     short: CreateShortLink
-
-    def __str__(self) -> str:
-        return f"/_address {self.user_id} short={to_on_off(self.short)}"
+    def format(self) -> str:
+        return "/_address " + A.decimal(self.user_id) + shortOnOffP(self.short)
 
 class CreateMyAddress(BaseChatCommand):
     short: CreateShortLink
-
-    def __str__(self) -> str:
-        short = " short" if self.short else ""
-
-        return "/address" + short
+    def format(self) -> str:
+        return "/address" + shortP(self.short)
 
 class APIDeleteMyAddress(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/_delete_address {self.user_id}"
+    def format(self) -> str:
+        return "/_delete_address " + A.decimal(self.user_id)
 
 class DeleteMyAddress(BaseChatCommand):
     def format(self) -> str:
@@ -1777,9 +1983,8 @@ class DeleteMyAddress(BaseChatCommand):
 
 class APIShowMyAddress(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/_show_address {self.user_id}"
+    def format(self) -> str:
+        return "/_show_address " + A.decimal(self.user_id)
 
 class ShowMyAddress(BaseChatCommand):
     def format(self) -> str:
@@ -1787,317 +1992,375 @@ class ShowMyAddress(BaseChatCommand):
 
 class APISetProfileAddress(BaseChatCommand):
     user_id: UserId
-    enabled: bool
-
-    def __str__(self) -> str:
-        return f"/_profile_address {self.user_id} {to_on_off(self.enabled)}"
+    on_or_off: bool
+    def format(self) -> str:
+        return "/_profile_address " + A.decimal(self.user_id) + A.space + onOffP(self.on_or_off)
 
 class SetProfileAddress(BaseChatCommand):
-    enabled: bool
+    on_or_off: bool
+    def format(self) -> str:
+        return "/profile_address " + onOffP(self.on_or_off)
 
-    def __str__(self) -> str:
-        return f"/profile_address {to_on_off(self.enabled)}"
+class APIAddressAutoAccept(BaseChatCommand):
+    user_id: UserId
+    auto_accept: Optional[AutoAccept]
+    def format(self) -> str:
+        return "/_auto_accept " + A.decimal(self.user_id) + A.space + autoAcceptP(self.auto_accept)
+
+class AddressAutoAccept(BaseChatCommand):
+    auto_accept: Optional[AutoAccept]
+    def format(self) -> str:
+        return "/auto_accept " + autoAcceptP(self.auto_accept)
 
 class AcceptContact(BaseChatCommand):
     incognito: IncognitoEnabled
     contact_name: ContactName
+    def format(self) -> str:
+        return "/accept" + incognitoP(self.incognito) + A.space + char_('@') + displayNameP(self.contact_name)
 
-    def __str__(self) -> str:
-        incognito = " incognito" if self.incognito else ""
-        return f"/accept{incognito} @{quote_display_name(self.contact_name)}"
+class RejectContact(BaseChatCommand):
+    contact_name: ContactName
+    def format(self) -> str:
+        return "/reject " + char_('@') + displayNameP(self.contact_name)
+
+class ForwardMessage(BaseChatCommand):
+    to_chat_name: ChatName
+    from_contact_name: ContactName
+    forwarded_msg: str
+    def format(self) -> str:
+        return chatNameP(self.to_chat_name) + " <- @" + displayNameP(self.from_contact_name) + A.space + msgTextP(self.forwarded_msg)
+
+class ForwardGroupMessage(BaseChatCommand):
+    to_chat_name: ChatName
+    from_group_name: GroupName
+    from_member_name: Optional[ContactName]
+    forwarded_msg: str
+    def format(self) -> str:
+        if self.from_member_name is not None:
+            return chatNameP(self.to_chat_name) + " <- #" + displayNameP(self.from_group_name) + A.space + A.char('@') + displayNameP(self.from_member_name) + A.space + msgTextP(self.forwarded_msg)
+        else:
+            return chatNameP(self.to_chat_name) + " <- #" + displayNameP(self.from_group_name) + A.space + msgTextP(self.forwarded_msg)
+
+class ForwardLocalMessage(BaseChatCommand):
+    to_chat_name: ChatName
+    forwarded_msg: str
+    def format(self) -> str:
+        return chatNameP(self.to_chat_name) + " <- * " + msgTextP(self.forwarded_msg)
+
+class SendMessage(BaseChatCommand):
+    chat_name: ChatName
+    str: str
+    def format(self) -> str:
+        return   chatNameP + A.space + msgTextP
+        return "/* " + ( (ChatName CTLocal "")  msgTextP)
 
 class SendMemberContactMessage(BaseChatCommand):
     group_name: GroupName
-    contact_name: ContactName  # TODO consistently change to member_name?
-    msg: str
+    contact_name: ContactName
+    msg_text: str
+    def format(self) -> str:
+        return "@#" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + A.space + msgTextP(self.msg_text)
 
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-        msg = json.dumps(self.msg)
+class SendLiveMessage(BaseChatCommand):
+    chat_name: ChatName
+    msg_text: str
+    def format(self) -> str:
+        return "/live " + chatNameP(self.chat_name) + A.space + msgTextP(self.msg_text)
 
-        return f"@#{group} @{contact} {msg}"
+class SendMessageQuote(BaseChatCommand):
+    contact_name: ContactName
+    msg_dir: AMsgDirection
+    quoted_msg: str
+    message: str
+    def format(self) -> str:
+        return (">@" <|> "> @") +  (AMsgDirection SMDRcv)
+        return (">>@" <|> ">> @") +  (AMsgDirection SMDSnd)
+
+class SendMessageBroadcast(BaseChatCommand):
+    msg_content: MsgContent
+    def format(self) -> str:
+        return "/feed " + ( . MCText  msgTextP)
+
+class DeleteMessage(BaseChatCommand):
+    chat_name: ChatName
+    str: str
+    def format(self) -> str:
+        return ("\\ " <|> "\\") + (  chatNameP + A.space + textP)
 
 class DeleteMemberMessage(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    deleted_msg: str
+    str: str
+    def format(self) -> str:
+        return ("\\\\ #" <|> "\\\\#") + (  displayNameP + A.space + char_('@') + displayNameP + A.space + textP)
 
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-        msg = self.deleted_msg
+class EditMessage(BaseChatCommand):
+    chat_name: ChatName
+    edited_msg: Text
+    message: Text
+    def format(self) -> str:
+        return ("! " <|> "!") + (  chatNameP + A.space + (quotedMsg <|> pure "") + msgTextP)
 
-        return f"\\\\#{group} @{contact} {msg}"
+class UpdateLiveMessage(BaseChatCommand):
+    chat_name: ChatName
+    chat_item_id: ChatItemId
+    live_message: bool
+    message: str
+    def format(self) -> str:
+        # TODO no parsing?
+        raise NotImplementedError()
+
+class ReactToMessage(BaseChatCommand):
+    add: bool
+    reaction: MsgReaction
+    chat_name: ChatName
+    react_to_message: str
+    def format(self) -> str:
+        return ("+" if self.add else "-") + reactionP(self.reaction) + A.space + chatNameP_(self.chat_name) + A.space + textP(self.react_to_message)
 
 class APINewGroup(BaseChatCommand):
     user_id: UserId
     incognito: IncognitoEnabled
     group_profile: GroupProfile
-
-    def __str__(self) -> str:
-        return f"/_group {self.user_id} incognito={to_on_off(self.incognito)} {self.group_profile.model_dump_json()}"
+    def format(self) -> str:
+        return "/_group " + A.decimal(self.user_id) + incognitoOnOffP(self.incognito) + A.space + jsonP(self.group_profile)
 
 class NewGroup(BaseChatCommand):
     incognito: IncognitoEnabled
-    group_profile: GroupProfile  # TODO only displayName and fullName are used
-
-    def __str__(self) -> str:
-        incognito = " incognito" if self.incognito else ""
-        display_name = quote_display_name(self.group_profile.displayName)
-        full_name = (" " + self.group_profile.fullName) if self.group_profile.fullName is not None else ""
-        profile = display_name + full_name
-
-        return f"/group{incognito} #{profile}"
+    group_profile: GroupProfile
+    def format(self) -> str:
+        return "/group" + incognitoP(self.incognito) + A.space + char_('#') + groupProfile(self.group_profile)
 
 class AddMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    role: GroupMemberRole
+    role: GroupMemberRole  # Default "member"
+    def format(self) -> str:
+        return "/add " + char_('#') + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + memberRole(self.role)
 
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
+class JoinGroup(BaseChatCommand):
+    group_name: GroupName
+    enable_ntfs: MsgFilter
+    def format(self) -> str:
+        if self.enable_ntfs == "none": ntfs_part = " mute"
+        elif self.enable_ntfs == "all": ntfs_part = ""
+        else: raise ValueError(f"Invalid value: {self.enable_ntfs}")  # No "mentions"?
 
-        return f"/add #{group} @{contact} {self.role}"
+        return "/join " + char_('#') + displayNameP(self.group_name) + ntfs_part
 
 class MemberRole(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
     role: GroupMemberRole
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/member role #{group} @{contact} {self.role}"
+    def format(self) -> str:
+        return "/member role " + char_('#') + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + memberRole(self.role)
 
 class BlockForAll(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    blocked: bool
+    block: bool
+    def format(self) -> str:
+        if self.block:
+            return "/block for all #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
+        else:
+            return "/unblock for all #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name)
 
-    def __str__(self) -> str:
-        name = "block" if self.blocked else "unblock"
-        group = quote_display_name(self.group_name)
-        contact = quote_display_name(self.contact_name)
-
-        return f"/{name} for all #{group} @{contact}"
+class RemoveMembers(BaseChatCommand):
+    group_name: GroupName
+    members: Set ContactName
+    with_messages: Bool
+    def format(self) -> str:
+        return ("/remove " <|> "/rm ") + char_('#') + (  displayNameP + A.space + (S.fromList  (char_('@') + displayNameP) `A.sepBy1\'` A.char ',') + (" messages=" + onOffP <|> pure False))
 
 class LeaveGroup(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/leave #{self.group_name}"
+    def format(self) -> str:
+        return "/leave " + char_('#') + displayNameP(self.group_name)
 
 class DeleteGroup(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/delete #{self.group_name}"
+    def format(self) -> str:
+        return "/delete #" + displayNameP(self.group_name)
 
 class ClearGroup(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/clear #{self.group_name}"
+    def format(self) -> str:
+        return "/clear #" + displayNameP(self.group_name)
 
 class ListMembers(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/members #{self.group_name}"
+    def format(self) -> str:
+        return "/members " + char_('#') + displayNameP(self.group_name)
 
 class APIListGroups(BaseChatCommand):
     user_id: UserId
     contact_id: Optional[ContactId]
     search: Optional[str]
-
-    def __str__(self) -> str:
-        # TODO file issue: no space between _groups and id
-        # also, what if search begins with @?
-        contact = f" @{self.contact_id}" if self.contact_id is not None else ""
-        search = (" " + self.search) if self.search is not None else ""
-
-        return f"/_groups{self.user_id}{contact}{search}"
+    def format(self) -> str:
+        return "/_groups" + A.decimal(self.user_id) + optional(self.contact_id, lambda c: " @" + A.decimal(c)) + optional(self.search, lambda s: A.space + stringP(s))
 
 class ListGroups(BaseChatCommand):
     contact_name: Optional[ContactName]
     search: Optional[str]
+    def format(self) -> str:
+        return "/groups" + optional(self.contact_name, lambda c: " @" + displayNameP(c)) + optional(self.search, lambda s: A.space + stringP(s))
 
-    def __str__(self) -> str:
-        contact = f" @{quote_display_name(self.contact_name)}" if self.contact_name is not None else ""
-        search = (" " + self.search) if self.search is not None else ""
-
-        return f"/groups{contact}{search}"
+class UpdateGroupNames(BaseChatCommand):
+    group_name: GroupName
+    group_profile: GroupProfile
+    def format(self) -> str:
+        return "/group_profile " + char_('#') + displayNameP(self.group_name) + A.space + groupProfile(self.group_profile)
 
 class ShowGroupProfile(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/group_profile #{quote_display_name(self.group_name)}"
+    def format(self) -> str:
+        return "/group_profile " + char_('#') + displayNameP(self.group_name)
 
 class UpdateGroupDescription(BaseChatCommand):
     group_name: GroupName
     description: Optional[str]
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        if self.description is not None:
-            return f"/set welcome #{group} {json.dumps(self.description)}"
-        else:
-            return f"/delete welcome #{group}"
+    def format(self) -> str:
+        return "/group_descr " + char_('#') + displayNameP(self.group_name) + optional(self.description, lambda d: A.space + msgTextP(d))
 
 class ShowGroupDescription(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/show welcome #{quote_display_name(self.group_name)}"
+    def format(self) -> str:
+        return "/show welcome " + char_('#') + displayNameP(self.group_name)
 
 class CreateGroupLink(BaseChatCommand):
     group_name: GroupName
-    role: GroupMemberRole
+    role: GroupMemberRole  # Default "member"
     short: CreateShortLink
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        short = " short" if self.short else ""
-
-        return f"/create link #{group} {self.role}{short}"
+    def format(self) -> str:
+        return "/create link #" + displayNameP(self.group_name) + memberRole(self.role) + shortP(self.short)
 
 class GroupLinkMemberRole(BaseChatCommand):
     group_name: GroupName
     role: GroupMemberRole
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-
-        return f"/set link role #{group} {self.role}"
+    def format(self) -> str:
+        return "/set link role #" + displayNameP(self.group_name) + memberRole(self.role)
 
 class DeleteGroupLink(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/delete link #{quote_display_name(self.group_name)}"
+    def format(self) -> str:
+        return "/delete link #" + displayNameP(self.group_name)
 
 class ShowGroupLink(BaseChatCommand):
     group_name: GroupName
-
-    def __str__(self) -> str:
-        return f"/show link #{quote_display_name(self.group_name)}"
+    def format(self) -> str:
+        return "/show link #" + displayNameP(self.group_name)
 
 class SendGroupMessageQuote(BaseChatCommand):
     group_name: GroupName
-    contact_name: Optional[ContactName]
+    contact_name_: Optional[ContactName]
     quoted_msg: str
-    msg: str
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        contact = (" " + quote_display_name(self.contact_name)) if self.contact_name is not None else ""
-        quoted = quote_msg(self.quoted_msg)
-        msg = json.dumps(self.msg)
-
-        return f">#{group}{contact} {quoted} {msg}"
+    message: str
+    def format(self) -> str:
+        return (">#" <|> "> #") + (  displayNameP + A.space + pure Nothing + quotedMsg + msgTextP)
+        return (">#" <|> "> #") + (  displayNameP + A.space + char_('@') + (Just  displayNameP) + A.space + quotedMsg + msgTextP)
 
 class ClearNoteFolder(BaseChatCommand):
     def format(self) -> str:
         return "/clear *"
 
 class LastChats(BaseChatCommand):
-    count: Optional[int]
+    count: Optional[int]  # Default 20
+    def format(self) -> str:
+        return "/chats" + (" all" if self.count is None else (A.space + A.decimal(self.count)))
 
-    def __str__(self) -> str:
-        count_part = "all" if self.count is None else str(self.count)
-        return f"/chats {count_part}"
+class LastMessages(BaseChatCommand):
+    chat_name: Optional[ChatName]
+    count: int
+    search: Optional[str]
+    def format(self) -> str:
+        if self.search is None:
+            return "/tail" + optional(self.chat_name, lambda c: A.space + chatNameP(c)) + msgCountP(self.count)
+        else:
+            return "/search" + optional(self.chat_name, lambda c: A.space + chatNameP(c)) + msgCountP(self.count) + A.space + stringP(self.search)
+
+class LastChatItemId(BaseChatCommand):
+    chat_name: Optional[ChatName]
+    index: int  # Default 0
+    def format(self) -> str:
+        return "/last_item_id" + optional(self.chat_name, lambda c: A.space + chatNameP(c)) + A.space + A.decimal(self.index)
 
 class ShowChatItem(BaseChatCommand):
     chat_item_id: Optional[ChatItemId]
+    def format(self) -> str:
+        if self.chat_item_id is None:
+            raise ValueError("Item ID chan't be None")  # Why?
+        return "/show " + A.decimal(self.chat_item_id)
 
-    def __str__(self) -> str:
-        assert self.chat_item_id is not None, "bug in parser?"  # TODO
-        return f"/show {self.chat_item_id}"
+class ShowChatItemInfo(BaseChatCommand):
+    chat_name: ChatName
+    msg: str
+    def format(self) -> str:
+        return "/item info " + chatNameP(self.chat_name) + A.space + msgTextP(self.msg)
 
 class ShowLiveItems(BaseChatCommand):
-    enabled: bool
-
-    def __str__(self) -> str:
-        return f"/show {to_on_off(self.enabled)}"
+    on_or_off: bool  # Default True
+    def format(self) -> str:
+        return "/show" + A.space + onOffP(self.on_or_off)
 
 class SendFile(BaseChatCommand):
     chat_name: ChatName
     crypto_file: CryptoFile
-
-    def __str__(self) -> str:
-        return f"/file {self.chat_name} {self.crypto_file}"
+    def format(self) -> str:
+        return "/file " + chatNameP_(self.chat_name) + A.space + cryptoFileP(self.crypto_file)
 
 class SendImage(BaseChatCommand):
     chat_name: ChatName
     crypto_file: CryptoFile
-
-    def __str__(self) -> str:
-        return f"/image {self.chat_name} {self.crypto_file}"
+    def format(self) -> str:
+        return "/image " + chatNameP_(self.chat_name) + A.space + cryptoFileP(self.crypto_file)
 
 class ForwardFile(BaseChatCommand):
     chat_name: ChatName
-    file_id: FileTransferId
-
-    def __str__(self) -> str:
-        return f"/fforward {self.chat_name} {self.file_id}"
+    file_transfer_id: FileTransferId
+    def format(self) -> str:
+        return "/fforward " + chatNameP_(self.chat_name) + A.space + A.decimal(self.file_transfer_id)
 
 class ForwardImage(BaseChatCommand):
     chat_name: ChatName
-    file_id: FileTransferId
-
-    def __str__(self) -> str:
-        return f"/image_forward {self.chat_name} {self.file_id}"
+    file_transfer_id: FileTransferId
+    def format(self) -> str:
+        return "/image_forward " + chatNameP_(self.chat_name) + A.space + A.decimal(self.file_transfer_id)
 
 class SendFileDescription(BaseChatCommand):
     chat_name: ChatName
     file_path: FilePath
-
-    def __str__(self) -> str:
-        return f"/fdescription {self.chat_name} {self.file_path}"
+    def format(self) -> str:
+        return "/fdescription " + chatNameP_(self.chat_name) + A.space + filePath(self.file_path)
 
 class ReceiveFile(BaseChatCommand):
-    file_transfer_id: FileTransferId  # TODO fileId?
-    user_approved_relays: bool
+    file_id: FileTransferId
+    user_approved_relays: bool  # Default False
     store_encrypted: Optional[bool]
     file_inline: Optional[bool]
     file_path: Optional[FilePath]
-
-    def __str__(self) -> str:
-        file_id = str(self.file_transfer_id)
-        approved = " approved_relays=" + to_on_off(self.user_approved_relays)
-        encrypt = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
-        inline = (" inline=" + to_on_off(self.file_inline)) if self.file_inline is not None else ""
-        file_path = (" " + self.file_path) if self.file_path is not None else ""
-
-        return f"/freceive " + file_id + approved + encrypt + inline + file_path
+    def format(self) -> str:
+        return "/freceive " + A.decimal(self.file_id) + \
+            (" approved_relays=" + onOffP(self.user_approved_relays)) + \
+            optional (self.store_encrypted, lambda e: " encrypt=" + onOffP(e)) + \
+            optional (self.file_inline, lambda i: " inline=" + onOffP(i)) + \
+            optional (self.file_path, lambda p: A.space + filePath(p))
 
 class SetFileToReceive(BaseChatCommand):
-    file_transfer_id: FileTransferId  # TODO fileId?
-    user_approved_relays: bool
+    file_id: FileTransferId
+    user_approved_relays: bool  # Default False
     store_encrypted: Optional[bool]
-
-    def __str__(self) -> str:
-        file_id = str(self.file_transfer_id)
-        approved = " approved_relays=" + to_on_off(self.user_approved_relays)
-        encrypt = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
-
-        return "/_set_file_to_receive " + file_id + approved + encrypt
+    def format(self) -> str:
+        return "/_set_file_to_receive " + A.decimal(self.file_id) + (" approved_relays=" + onOffP(self.user_approved_relays)) + optional(self.store_encrypted, lambda e: " encrypt=" + onOffP(e))
 
 class CancelFile(BaseChatCommand):
     file_transfer_id: FileTransferId
-
-    def __str__(self) -> str:
-        return f"/fcancel {self.file_transfer_id}"
+    def format(self) -> str:
+        return "/fcancel " + A.decimal(self.file_transfer_id)
 
 class FileStatus(BaseChatCommand):
     file_transfer_id: FileTransferId
-
-    def __str__(self) -> str:
-        return f"/fstatus {self.file_transfer_id}"
+    def format(self) -> str:
+        return "/fstatus " + A.decimal(self.file_transfer_id)
 
 class ShowProfile(BaseChatCommand):
     def format(self) -> str:
@@ -2106,72 +2369,124 @@ class ShowProfile(BaseChatCommand):
 class UpdateProfile(BaseChatCommand):
     display_name: ContactName
     full_name: str
-
-    def __str__(self) -> str:
-        return f"/profile {quote_display_name(self.display_name)} {self.full_name}"
+    def format(self) -> str:
+        return "/profile " + profileNames(self.display_name, self.full_name)
 
 class UpdateProfileImage(BaseChatCommand):
     image_data: Optional[ImageData]
-
-    def __str__(self) -> str:
-        if self.image_data is None:
-            return "/delete profile image"
+    def format(self) -> str:
+        if self.image_data is not None:
+            return "/set profile image " + imageP(self.image_data)
         else:
-            return f"/set profile image {self.image_data}"
+            return "/delete profile image"
 
 class ShowProfileImage(BaseChatCommand):
     def format(self) -> str:
         return "/show profile image"
 
-class SetUserTimedMessages(BaseChatCommand):
-    disappear: bool
+class SetUserFeature(BaseChatCommand):
+    a_chat_feature: AChatFeature
+    feature_allowed: FeatureAllowed
+    def format(self) -> str:
+        return "/set voice " + ( (ACF SCFVoice)  strP)
+        return "/set calls " + ( (ACF SCFCalls)  strP)
+        return "/set delete " + ( (ACF SCFFullDelete)  strP)
 
-    def __str__(self) -> str:
-        return "/set disappear " + ("yes" if self.disappear else "no")
+class SetContactFeature(BaseChatCommand):
+    a_chat_feature: AChatFeature
+    contact_name: ContactName
+    feature_allowed: Optional[FeatureAllowed]
+    def format(self) -> str:
+        return "/set voice @" + ( (ACF SCFVoice)  displayNameP + optional (A.space + strP))
+        return "/set calls @" + ( (ACF SCFCalls)  displayNameP + optional (A.space + strP))
+        return "/set delete @" + ( (ACF SCFFullDelete)  displayNameP + optional (A.space + strP))
+
+class SetGroupFeature(BaseChatCommand):
+    a_group_feature_no_role: AGroupFeatureNoRole
+    group_name: GroupName
+    group_feature_enabled: GroupFeatureEnabled
+    def format(self) -> str:
+        return "/set history #" + ( (AGFNR SGFHistory)  displayNameP + (A.space + strP))
+        return "/set reactions #" + ( (AGFNR SGFReactions)  displayNameP + (A.space + strP))
+        return "/set reports #" + ( (AGFNR SGFReports)  displayNameP + _strP)
+
+class SetGroupFeatureRole(BaseChatCommand):
+    a_group_feature_role: AGroupFeatureRole
+    group_name: GroupName
+    group_feature_enabled: GroupFeatureEnabled
+    role: Optional[GroupMemberRole]
+    def format(self) -> str:
+        return "/set voice #" + ( (AGFR SGFVoice)  displayNameP + _strP + optional memberRole)
+        return "/set files #" + ( (AGFR SGFFiles)  displayNameP + _strP + optional memberRole)
+        return "/set delete #" + ( (AGFR SGFFullDelete)  displayNameP + _strP + optional memberRole)
+        return "/set direct #" + ( (AGFR SGFDirectMessages)  displayNameP + _strP + optional memberRole)
+        return "/set links #" + ( (AGFR SGFSimplexLinks)  displayNameP + _strP + optional memberRole)
+
+class SetUserTimedMessages(BaseChatCommand):
+    on_or_off: bool
+    def format(self) -> str:
+        return "/set disappear " + ("yes" if self.on_or_off else "no")
+
+class SetContactTimedMessages(BaseChatCommand):
+    contact_name: ContactName
+    timed_messages_enabled: Optional[TimedMessagesEnabled]
+    def format(self) -> str:
+        return "/set disappear @" + displayNameP(self.contact_name) + optional(self.timed_messages_enabled, lambda t: A.space + timedMessagesEnabledP(t))
 
 class SetGroupTimedMessages(BaseChatCommand):
     group_name: GroupName
-    timed_ttl: Optional[int]
-
-    def __str__(self) -> str:
-        group = quote_display_name(self.group_name)
-        ttl = f"on {self.timed_ttl}" if self.timed_ttl is not None else "off"
-
-        return f"/set disappear #{group} {ttl}"
+    ttl: Optional[int]
+    def format(self) -> str:
+        return "/set disappear #" + displayNameP(self.group_name) + A.space + timedTTLOnOffP(self.ttl)
 
 class SetLocalDeviceName(BaseChatCommand):
     name: str
-
-    def __str__(self) -> str:
-        return f"/set device name {self.name}"
+    def format(self) -> str:
+        return "/set device name " + textP(self.name)
 
 class ListRemoteHosts(BaseChatCommand):
     def format(self) -> str:
         return "/list remote hosts"
 
+class StartRemoteHost(BaseChatCommand):
+    remote_host_id, bool: Optional[RemoteHostId, Bool]
+    rc_ctrl_address: Optional[RCCtrlAddress]
+    word16: Optional[Word16]
+    def format(self) -> str:
+        return "/start remote host " + ("new"  Nothing <|> (Just  ((,)  A.decimal + (" multicast=" + onOffP <|> pure False)))) + optional (A.space + rcCtrlAddressP) + optional (" port=" + A.decimal)
+
 class SwitchRemoteHost(BaseChatCommand):
     remote_host_id: Optional[RemoteHostId]
+    def format(self) -> str:
+        return "/switch remote host " + ("local" if self.remote_host_id is None else A.decimal(self.remote_host_id))
 
-    def __str__(self) -> str:
-        host_part = "local" if self.remote_host_id is None else str(self.remote_host_id)
-
-        return "/switch remote host " + host_part
+class StopRemoteHost(BaseChatCommand):
+    rh_key: RHKey
+    def format(self) -> str:
+        return "/stop remote host " + ("new"  RHNew <|> RHId  A.decimal)
 
 class DeleteRemoteHost(BaseChatCommand):
     remote_host_id: RemoteHostId
-
-    def __str__(self) -> str:
-        return f"/delete remote host {self.remote_host_id}"
+    def format(self) -> str:
+        return "/delete remote host " + A.decimal(self.remote_host_id)
 
 class StoreRemoteFile(BaseChatCommand):
     remote_host_id: RemoteHostId
     store_encrypted: Optional[bool]
     local_path: FilePath
+    def format(self) -> str:
+        return "/store remote file " + A.decimal(self.remote_host_id) + optional(self.store_encrypted, lambda e: " encrypt=" + onOffP(e)) + A.space + filePath(self.local_path)
 
-    def __str__(self) -> str:
-        encrypted_part = (" encrypt=" + to_on_off(self.store_encrypted)) if self.store_encrypted is not None else ""
+class GetRemoteFile(BaseChatCommand):
+    remote_host_id: RemoteHostId
+    file: RemoteFile
+    def format(self) -> str:
+        return "/get remote file " + A.decimal(self.remote_host_id) + A.space + jsonP(self.file)
 
-        return f"/store remote file {self.remote_host_id}{encrypted_part} {self.local_path}"
+class ConnectRemoteCtrl(BaseChatCommand):
+    rc_signed_invitation: RCSignedInvitation
+    def format(self) -> str:
+        return "/connect remote ctrl "  + strP(self.rc_signed_invitation)
 
 class FindKnownRemoteCtrl(BaseChatCommand):
     def format(self) -> str:
@@ -2179,15 +2494,13 @@ class FindKnownRemoteCtrl(BaseChatCommand):
 
 class ConfirmRemoteCtrl(BaseChatCommand):
     remote_ctrl_id: RemoteCtrlId
-
-    def __str__(self) -> str:
-        return f"/confirm remote ctrl {self.remote_ctrl_id}"
+    def format(self) -> str:
+        return "/confirm remote ctrl " + A.decimal(self.remote_ctrl_id)
 
 class VerifyRemoteCtrlSession(BaseChatCommand):
     session_id: str
-
-    def __str__(self) -> str:
-        return f"/verify remote ctrl {self.session_id}"
+    def format(self) -> str:
+        return "/verify remote ctrl " + textP(self.session_id)
 
 class ListRemoteCtrls(BaseChatCommand):
     def format(self) -> str:
@@ -2199,9 +2512,26 @@ class StopRemoteCtrl(BaseChatCommand):
 
 class DeleteRemoteCtrl(BaseChatCommand):
     remote_ctrl_id: RemoteCtrlId
+    def format(self) -> str:
+        return "/delete remote ctrl " + A.decimal(self.remote_ctrl_id)
 
-    def __str__(self) -> str:
-        return f"/delete remote ctrl {self.remote_ctrl_id}"
+class APIUploadStandaloneFile(BaseChatCommand):
+    user_id: UserId
+    crypto_file: CryptoFile
+    def format(self) -> str:
+        return "/_upload " + A.decimal(self.user_id) + A.space + cryptoFileP(self.crypto_file)
+
+class APIDownloadStandaloneFile(BaseChatCommand):
+    user_id: UserId
+    file_description_uri: FileDescriptionURI
+    crypto_file: CryptoFile
+    def format(self) -> str:
+        return "/_download " + A.decimal(self.user_id) + A.space + strP_(self.file_description_uri) + cryptoFileP(self.crypto_file)
+
+class APIStandaloneFileInfo(BaseChatCommand):
+    file_description_uri: FileDescriptionURI
+    def format(self) -> str:
+        return "/_download info " + strP(self.file_description_uri)
 
 class QuitChat(BaseChatCommand):
     def format(self) -> str:
@@ -2215,17 +2545,20 @@ class DebugLocks(BaseChatCommand):
     def format(self) -> str:
         return "/debug locks"
 
+class DebugEvent(BaseChatCommand):
+    chat_event: ChatEvent
+    def format(self) -> str:
+        return "/debug event " + jsonP(self.chat_event)
+
 class GetAgentSubsTotal(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/get subs total {self.user_id}"
+    def format(self) -> str:
+        return "/get subs total " + A.decimal(self.user_id)
 
 class GetAgentServersSummary(BaseChatCommand):
     user_id: UserId
-
-    def __str__(self) -> str:
-        return f"/get servers summary {self.user_id}"
+    def format(self) -> str:
+        return "/get servers summary " + A.decimal(self.user_id)
 
 class ResetAgentServersStats(BaseChatCommand):
     def format(self) -> str:
@@ -2252,7 +2585,6 @@ class GetAgentQueuesInfo(BaseChatCommand):
         return "/get queues"
 
 class CustomChatCommand(BaseChatCommand):
-    command: str
-
-    def __str__(self) -> str:
-        return "//" + self.command
+    data: bytes
+    def format(self) -> str:
+        return "//" + A.takeByteString(self.data)
