@@ -419,38 +419,11 @@ class SimpleNetCfg(BaseModel):
     tcpTimeout: Optional[int]  # Multiplied by 1,000,000(?)
     logTLSErrors: bool
 
-    def __str__(self) -> str:
-        # TODO default values?
-        socksProxy = "socks=" + ("off" if self.socksProxy is None else self.socksProxy)
-        socksMode = " socks-mode=" + self.socksMode
-        hostMode = " host-mode=" + self.hostMode
-        requiredHostMode = " required-host-mode" if self.requiredHostMode else ""
-        smpProxyMode = (" smp-proxy=" + self.smpProxyMode) if self.smpProxyMode is not None else ""
-        smpProxyFallback = (" smp-proxy-fallback=" + self.smpProxyFallback) if self.smpProxyFallback is not None else ""
-        smpWebPortServers = (" smp-web-port-servers=" + self.smpWebPortServers) if self.smpWebPortServers is not None else ""
-        tcpTimeout = (f" timeout={self.tcpTimeout}") if self.tcpTimeout is not None else ""
-        logTLSErrors = f" log={to_on_off(self.logTLSErrors)}"
-
-        return socksProxy + socksMode + hostMode + requiredHostMode + smpProxyMode + smpProxyFallback + smpWebPortServers + tcpTimeout + logTLSErrors
-
 ChatType = Literal["direct", "group", "local", "contactRequest", "contactConnection"]
 
 class ChatName(BaseModel):
     chatType: ChatType
     chatName: str
-
-    def __str__(self) -> str:
-        if self.chatType == "direct":               t = "@"
-        elif self.chatType == "group":              t = "#"
-        elif self.chatType == "local":              t = "*"
-        elif self.chatType == "contactConnection":  t = ":"
-        elif self.chatType == "group":              t = "#"
-        else:
-            # TODO contactRequest unreachable(?)
-            raise ValueError(f"Illegal chat type: {self.chatType}")
-        name = quote_display_name(self.chatName)
-
-        return t + name
 
 SbKey = str
 
@@ -687,24 +660,15 @@ class PaginationByTime(BaseModel):
     count: int
     type: Literal["before", "after", "last"]
     # Not relevant for "last"
-    time: Optional[str]  # TODO
+    time: Optional[str] = None  # TODO
 
-def quote_display_name(name: str) -> str:
-    # TODO address minor difference between Haskell isSpace and python str.isspace
-    if all(not c.isspace() for c in name) and "," not in name:
-        return name
-    elif "'" not in name:
-        return "'" + name + "'"
-    else:
-        raise ValueError(f"Invalid UserName: {name}")
+class CLQFilters(BaseModel):
+    favorite: bool
+    unread: bool
+class CLQSearch(BaseModel):
+    search: str
+ChatListQuery = Union[CLQFilters, CLQSearch]
 
-def to_on_off(b: bool) -> str:
-    return "on" if b else "off"
-
-def quote_msg(msg: str) -> str:
-    if ")" in msg:
-        raise ValueError(f"Invalid quoted message: {msg}")
-    return "(" + msg + ")"
 
 # -------------------------------------------------------------
 
@@ -1028,9 +992,9 @@ class APIGetChatTags(BaseChatCommand):
 
 class APIGetChats(BaseChatCommand):
     user_id: UserId
-    pending_connections: bool  # Default False
-    pagination: PaginationByTime  # Default PTLast 5000
-    query: ChatListQuery  # Default clqNoFilters
+    pending_connections: bool = False
+    pagination: PaginationByTime = PaginationByTime(type="last", count=5000)
+    query: ChatListQuery = CLQFilters(favorite=False, unread=False)
     def format(self) -> str:
         return "/_get chats " \
         + (
@@ -1425,7 +1389,7 @@ class APIUpdateGroupProfile(BaseChatCommand):
 
 class APICreateGroupLink(BaseChatCommand):
     group_id: GroupId
-    role: GroupMemberRole  # Default "member"
+    role: GroupMemberRole = "member"
     short: CreateShortLink
     def format(self) -> str:
         return "/_create link #" + A.decimal(self.group_id) + memberRole(self.role) + shortOnOffP(self.short)
@@ -2134,7 +2098,7 @@ class NewGroup(BaseChatCommand):
 class AddMember(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    role: GroupMemberRole  # Default "member"
+    role: GroupMemberRole = "member"
     def format(self) -> str:
         return "/add " + char_('#') + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + memberRole(self.role)
 
@@ -2229,7 +2193,7 @@ class ShowGroupDescription(BaseChatCommand):
 
 class CreateGroupLink(BaseChatCommand):
     group_name: GroupName
-    role: GroupMemberRole  # Default "member"
+    role: GroupMemberRole = "member"
     short: CreateShortLink
     def format(self) -> str:
         return "/create link #" + displayNameP(self.group_name) + memberRole(self.role) + shortP(self.short)
@@ -2264,7 +2228,7 @@ class ClearNoteFolder(BaseChatCommand):
         return "/clear *"
 
 class LastChats(BaseChatCommand):
-    count: Optional[int]  # Default 20
+    count: Optional[int] = 20
     def format(self) -> str:
         return "/chats" + (" all" if self.count is None else (A.space + A.decimal(self.count)))
 
@@ -2280,7 +2244,7 @@ class LastMessages(BaseChatCommand):
 
 class LastChatItemId(BaseChatCommand):
     chat_name: Optional[ChatName]
-    index: int  # Default 0
+    index: int = 0
     def format(self) -> str:
         return "/last_item_id" + optional(self.chat_name, lambda c: A.space + chatNameP(c)) + A.space + A.decimal(self.index)
 
@@ -2298,7 +2262,7 @@ class ShowChatItemInfo(BaseChatCommand):
         return "/item info " + chatNameP(self.chat_name) + A.space + msgTextP(self.msg)
 
 class ShowLiveItems(BaseChatCommand):
-    on_or_off: bool  # Default True
+    on_or_off: bool = True
     def format(self) -> str:
         return "/show" + A.space + onOffP(self.on_or_off)
 
@@ -2334,7 +2298,7 @@ class SendFileDescription(BaseChatCommand):
 
 class ReceiveFile(BaseChatCommand):
     file_id: FileTransferId
-    user_approved_relays: bool  # Default False
+    user_approved_relays: bool = False
     store_encrypted: Optional[bool]
     file_inline: Optional[bool]
     file_path: Optional[FilePath]
@@ -2347,7 +2311,7 @@ class ReceiveFile(BaseChatCommand):
 
 class SetFileToReceive(BaseChatCommand):
     file_id: FileTransferId
-    user_approved_relays: bool  # Default False
+    user_approved_relays: bool = False
     store_encrypted: Optional[bool]
     def format(self) -> str:
         return "/_set_file_to_receive " + A.decimal(self.file_id) + (" approved_relays=" + onOffP(self.user_approved_relays)) + optional(self.store_encrypted, lambda e: " encrypt=" + onOffP(e))
