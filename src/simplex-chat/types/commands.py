@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Any, Literal, Optional, TypeVar, Union, Callable
+from typing import Annotated, Any, Literal, Optional, Sequence, TypeAlias, TypeVar, Union, Callable
 from abc import ABC, abstractmethod
 import sys
 
@@ -345,6 +345,8 @@ RemoteCtrlId = int
 CbNonce = str
 # Doesn't exist in Haskell
 VerifyCode = Annotated[str, StringConstraints(pattern=r"^[^\d ]$")]
+NoteFolderId = int
+MemberName = str
 
 CallMedia = Literal["audio", "video"]
 
@@ -524,8 +526,24 @@ class UIThemeEntityOverrides(BaseModel):
 
 MsgFilter = Literal["none", "all", "mentions"]
 
+
+SProtocolType = Literal["smp", "ntf", "xftp"]
 AProtocolType = Literal["smp", "ntf", "xftp"]
-AProtoServerWithAuth = str  # TODO validation
+BasicAuth = str
+KeyHash = str
+TransportHost = str  # IPv4 / IPv6 / .onion / domain TODO enforce pattern
+ServiceName = str
+class ProtocolServer(BaseModel):
+    scheme: SProtocolType
+    host: list[TransportHost]  # NonEmpty
+    port: ServiceName
+    keyHash: KeyHash
+class ProtoServerWithAuth(BaseModel):
+    protoServer: ProtocolServer
+    serverBasicAuth: Optional[BasicAuth]
+class AProtoServerWithAuth(BaseModel):
+    protocol: SProtocolType
+    server: ProtoServerWithAuth
 
 GroupFeatureEnabled = Literal["on", "off"]
 
@@ -656,11 +674,16 @@ class NewUser(BaseModel):
     profile: Optional[Profile]
     pastTimestamp: bool
 
-class PaginationByTime(BaseModel):
+UTCTime = str
+class PTLast(BaseModel):
     count: int
-    type: Literal["before", "after", "last"]
-    # Not relevant for "last"
-    time: Optional[str] = None  # TODO
+class PTAfter(BaseModel):
+    after: UTCTime
+    count: int
+class PTBefore(BaseModel):
+    before: UTCTime
+    count: int
+PaginationByTime = Union[PTLast, PTAfter, PTBefore]
 
 class CLQFilters(BaseModel):
     favorite: bool
@@ -669,6 +692,133 @@ class CLQSearch(BaseModel):
     search: str
 ChatListQuery = Union[CLQFilters, CLQSearch]
 
+MsgContentTag = Union[Literal["text", "link", "image", "video", "file", "voice", "report"], str]
+
+
+class CPLast(BaseModel):
+    count: int
+class CPAfter(BaseModel):
+    after_id: ChatItemId
+    count: int
+class CPBefore(BaseModel):
+    before_id: ChatItemId
+    count: int
+class CPAround(BaseModel):
+    around_id: ChatItemId
+    count: int
+class CPInitial(BaseModel):
+    count: int
+ChatPagination = Union[CPLast, CPAfter, CPBefore, CPAround, CPInitial]
+
+
+class SRDirect(BaseModel):
+    contact_id: ContactId
+class SRGroup(BaseModel):
+    group_id: GroupId
+    member_id: Optional[GroupMemberId]
+SendRef = Union[SRDirect, SRGroup]
+
+JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
+
+ReportReason = Union[Literal["spam", "content", "community", "profile", "other"], str]
+
+class LCPage(BaseModel): pass
+class LCImage(BaseModel): pass
+class LCVideo(BaseModel):
+    duration: Optional[int]
+class LCUnknown(BaseModel):
+    tag: str
+    json_: JSON = Field(alias="json")
+LinkContent = Union[LCPage, LCImage, LCVideo, LCUnknown]
+
+class LinkPreview(BaseModel):
+    uri: str
+    title: str
+    description: str
+    image: ImageData
+    content: Optional[LinkContent]
+
+class MCText(BaseModel):
+    text: str
+class MCLink(BaseModel):
+    text: str
+    preview: LinkPreview
+class MCImage(BaseModel):
+    text: str
+    image: ImageData
+class MCVideo(BaseModel):
+    text: str
+    image: ImageData
+    duration: int
+class MCVoice(BaseModel):
+    text: str
+    duration: int
+class MCFile(BaseModel):
+    text: str
+class MCReport(BaseModel):
+    text: str
+    reason: ReportReason
+class MCUnknown(BaseModel):
+    tag: str
+    text: str
+    json_: JSON = Field(alias="json")
+MsgContent = Union[MCText, MCLink, MCImage, MCVideo, MCVoice, MCFile, MCReport, MCUnknown]
+
+
+class ComposedMessage(BaseModel):
+    fileSource: Optional[CryptoFile]
+    quotedItemId: Optional[ChatItemId]
+    msgContent: MsgContent
+    mentions: dict[MemberName, GroupMemberId]
+
+class ChatTagData(BaseModel):
+    emoji: Optional[str]
+    text: str
+
+class UpdatedMessage(BaseModel):
+    msgContent: MsgContent
+    mentions: dict[MemberName, GroupMemberId]
+
+CIDeleteMode = Literal["broadcast", "internal", "internalMark"]
+
+
+MREmojiChar = Annotated[str, StringConstraints(min_length=1, max_length=1)]
+class MREmoji(BaseModel):
+    emoji: MREmojiChar
+class MRUnknown(BaseModel):
+    tag: str
+    json_: JSON = Field(alias="json")  # J.Object
+MsgReaction = Union[MREmoji, MRUnknown]
+
+PushProvider = Literal["apns_dev", "apns_prod", "apns_test", "apns_null"]
+class DeviceToken(BaseModel):
+    push_provider: PushProvider
+    token: bytes
+
+class AutoAccept(BaseModel):
+    businessAddress: bool  # possibly, it can be wrapped together with acceptIncognito, or AutoAccept made sum type
+    acceptIncognito: IncognitoEnabled
+    autoReply: Optional[MsgContent]
+
+AMsgDirection = Literal["snd", "rcv"]
+
+class RCCtrlAddress(BaseModel):
+    address: TransportHost  # allows any interface when found exactly
+    interface: str
+
+ciTTL_t = Optional[Literal["day", "week", "month", "year", "none"]]
+
+ChatFeature = Literal["timedMessages", "fullDelete", "reactions", "voice", "calls"]
+SChatFeature = ChatFeature
+AChatFeature = SChatFeature
+
+GroupFeature = Literal["timedMessages", "directMessages", "fullDelete", "reactions", "voice", "files", "simplexLinks", "reports", "history"]
+SGroupFeature = GroupFeature
+AGroupFeature = SGroupFeature
+AGroupFeatureNoRole = SGroupFeature
+AGroupFeatureRole = SGroupFeature
+
+NotificationsMode = Literal["PERIODIC", "INSTANT"]
 
 # -------------------------------------------------------------
 
@@ -679,18 +829,43 @@ class A:
     space = " "
     @staticmethod
     def decimal(n: int) -> str: return str(n)
+    @staticmethod
+    def char(c: str) -> str:
+        if len(c) != 1:
+            raise ValueError(f"Not a character: {c}")
+        return c
+    @staticmethod
+    def takeByteString(b: bytes) -> str:
+        return b.decode("utf-8")
 def AsepBy1(): ...
 def Achar(): ...
 def AtakeTill(): ...
 
-def char_(c: str) -> str: return c  # Can also return ""
+def char_(c: str) -> str: return A.char(c)  # Can also return ""
 def textP(s: str) -> str: return s
-def strP(s: str) -> str: return s  # TODO base64?
-def jsonP(obj: Any) -> str:
-    if isinstance(obj, BaseModel): return obj.model_dump_json()
-    else: return json.dumps(obj)
+strP_t = Union[str, bytes, list[int], DeviceToken]
+def strP(s: strP_t) -> str:  # TODO base64?
+    if isinstance(s, str):
+        return s
+    elif isinstance(s, bytes):
+        return s.decode("utf-8")
+    elif isinstance(s, list) and s and isinstance(s[0], int):
+        return ",".join(str(x) for x in s)
+    elif isinstance(s, DeviceToken):
+        return s.push_provider + " " + s.token.decode("utf-8")
+    else:
+        raise TypeError(f"Bad input for strP: {s}")
+def _strP(s: strP_t) -> str: return A.space + strP(s)
+def strP_(s: strP_t) -> str: return strP(s) + A.space
+def jsonP(obj: Union[BaseModel, Sequence[BaseModel], JSON]) -> str:
+    if isinstance(obj, BaseModel):
+        return obj.model_dump_json()
+    elif isinstance(obj, list) and obj and isinstance(obj[0], BaseModel):
+        obj2: list[BaseModel] = obj  # type: ignore
+        return jsonP([item.model_dump() for item in obj2])
+    else:
+        return json.dumps(obj)
 def stringP(s: str) -> str: return s
-def _strP(): ...
 
 def optional(maybe: Optional[T], transform: Callable[[T], str]=str):
     return transform(maybe) if maybe is not None else ""
@@ -700,16 +875,36 @@ def shortP(b: bool) -> str: return A.space + "short" if b else ""
 def incognitoP(b: bool) -> str: return A.space + "incognito" if b else ""
 def shortOnOffP(b: bool) -> str: return A.space + "short=" + onOffP(b)
 def incognitoOnOffP(b: bool) -> str: return A.space + "incognito=" + onOffP(b)
+def liveMessageP(b: bool) -> str: return " live=" + onOffP(b)
 
-def liveMessageP(): ...
-def sendMessageTTLP(): ...
-def msgTextP(): ...
-def msgContentP(): ...
+def sendMessageTTLP(ttl: Optional[int]):
+    return (" ttl=" + A.decimal(ttl)) if ttl is not None else "default"
+msgTextP = jsonP
+def msgContentP(mc: MsgContent) -> str: return "json " + jsonP(mc)
 def composedMessagesTextP(): ...
 def updatedMessagesTextP(): ...
-def quotedMsg(): ...
+def quotedMsg(msg: str) -> str:
+    if ")" in msg:
+        raise ValueError(f"Unquotable quoted message: {msg}")
+    return A.char('(') + msg + A.char(')') + A.space
 
-def chatNameP(): ...
+def chatTypeP(ct: ChatType) -> str:
+    if ct == "direct": return A.char('@')
+    elif ct == "group": return A.char('#')
+    elif ct == "local": return A.char('*')
+    elif ct == "contactConnection": return A.char(':')
+    else: raise ValueError(f"Bad ChatType: {ct}")
+
+def chatNameP(cn: ChatName):
+    result = chatTypeP(cn.chatType)
+    if cn.chatType == "local":
+        result += ""
+    else:
+        result += displayNameP(cn.chatName)
+    return result
+def chatNameP_(cn: ChatName) -> str:
+    return chatTypeP(cn.chatType) + displayNameP(cn.chatName)
+
 def displayNameP(name: str) -> str:
     if name == "":
         raise ValueError("Empty display name")
@@ -735,10 +930,37 @@ def dbKeyP(key: DBEncryptionKey) -> str:
     return strP(key)
 
 def dbEncryptionConfig(): ...
-def paginationByTimeP(): ...
+def paginationByTimeP(pt: PaginationByTime) -> str:
+    if isinstance(pt, PTLast):
+        return " count=" + A.decimal(pt.count)
+    elif isinstance(pt, PTAfter):
+        return "after=" + strP(pt.after) + A.space + "count=" + A.decimal(pt.count)
+    elif isinstance(pt, PTBefore):
+        return "before=" + strP(pt.before) + A.space + "count=" + A.decimal(pt.count)
+    else:
+        raise ValueError(f"Invalid pagination by time: {pt}")
+
 def chatRefP(ref: ChatRef) -> str: return ref
-def chatPaginationP(): ...
-def sendRefP(): ...
+def chatPaginationP(p: ChatPagination):
+        if isinstance(p, CPLast):
+            return "count=" + A.decimal(p.count)
+        elif isinstance(p, CPAfter):
+            return "after=" + A.decimal(p.after_id) + A.space + "count=" + A.decimal(p.count)
+        elif isinstance(p, CPBefore):
+            return "before=" + A.decimal(p.before_id) + A.space + "count=" + A.decimal(p.count)
+        elif isinstance(p, CPAround):
+            return "around=" + A.decimal(p.around_id) + A.space + "count=" + A.decimal(p.count)
+        elif isinstance(p, CPInitial):
+            return "initial=" + A.decimal(p.count)
+        else:
+            raise ValueError(f"Invalid pagination: {p}")
+def sendRefP(ref: SendRef):
+        if isinstance(ref, SRDirect):
+            return A.char('@') + A.decimal(ref.contact_id)
+        elif isinstance(ref, SRGroup):
+            return A.char('#') + A.decimal(ref.group_id) + optional(ref.member_id, lambda m: " @" + A.decimal(m))
+        else:
+            raise ValueError(f"Invalid send ref: {ref}")
 def knownReaction(): ...
 def chatDeleteMode(mode: ChatDeleteMode):
     if (mode.mode == "messages") != (mode.notify is not None):
@@ -749,13 +971,37 @@ def connMsgsP(): ...
 def memberRole(role: GroupMemberRole) -> str: return " " + role
 def protocolServersP(): ...
 def operatorRolesP(): ...
-def ciTTLDecimal(): ...
-def ciTTL(): ...
+def ciTTLDecimal(ttl: Optional[int]) -> str: return "default" if ttl is None else A.decimal(ttl)
+def ciTTL(ttl: ciTTL_t) -> str: return "none" if ttl is None else ttl
 def netCfgP(): ...
-def verifyCodeP(): ...
+def verifyCodeP(code: VerifyCode) -> str:
+    if " " in code:
+        raise ValueError(f"Verify code can't contain a space: {code}")
+    return code
 def groupProfile(): ...
 def connLinkP(): ...
+def cryptoFileP(file: CryptoFile) -> str:
+      return optional(file.cryptoArgs, lambda a: " key=" + strP(a.fileKey) + A.space + " nonce=" + strP(a.fileNonce)) \
+        + filePath(file.filePath)
+def autoAcceptP(aa: Optional[AutoAccept]) -> str:
+    result = ""
+    result += onOffP(aa is not None)
+    if aa is not None:
+        autoReply = lambda: optional(aa.autoReply, lambda ar: A.space + msgContentP(ar))
+        if not aa.businessAddress:
+            if aa.acceptIncognito: raise ValueError("Business address can't accept incognito")  # TODO enforce in type?
+            result += " business" + autoReply()
+        else:
+            result += " incognito=" + onOffP(aa.acceptIncognito) + autoReply()
+    return result
+def msgCountP(count: int) -> str: return A.space + A.decimal(count)
 
+def timedTTLP(ttl: int) -> str: return A.decimal(ttl)
+def timedTTLOnOffP(ttl: Optional[int]) -> str:
+    if ttl is not None:
+        return "on" + A.space + timedTTLP(ttl)
+    else:
+        return "off"
 
 # -------------------------------------------------------------
 
@@ -993,7 +1239,7 @@ class APIGetChatTags(BaseChatCommand):
 class APIGetChats(BaseChatCommand):
     user_id: UserId
     pending_connections: bool = False
-    pagination: PaginationByTime = PaginationByTime(type="last", count=5000)
+    pagination: PaginationByTime = PTLast(count=5000)
     query: ChatListQuery = CLQFilters(favorite=False, unread=False)
     def format(self) -> str:
         return "/_get chats " \
@@ -1319,7 +1565,7 @@ class APIDeleteToken(BaseChatCommand):
 
 class APIGetNtfConns(BaseChatCommand):
     nonce: CbNonce
-    enc_ntf_info: ByteString
+    enc_ntf_info: bytes
     def format(self) -> str:
         return "/_ntf conns " + strP(self.nonce) + A.space + strP(self.enc_ntf_info)
 
@@ -1366,8 +1612,8 @@ class APIBlockMembersForAll(BaseChatCommand):
 # TODO
 class APIRemoveMembers(BaseChatCommand):
     group_id: GroupId
-    member_ids: Set GroupMemberId
-    with_messages: Bool
+    member_ids: set[GroupMemberId]
+    with_messages: bool
     def format(self) -> str:
         return "/_remove #" + A.decimal + _strP + (" messages=" + onOffP <|> pure False)
 
@@ -1435,11 +1681,15 @@ class GetUserProtoServers(BaseChatCommand):
 
 # TODO
 class SetUserProtoServers(BaseChatCommand):
-    a_protocol_type: AProtocolType
-    a_proto_server_with_auth: list[AProtoServerWithAuth]
+    protocol_type: AProtocolType
+    servers: list[AProtoServerWithAuth]
     def format(self) -> str:
-        return "/smp " + ( (AProtocolType SPSMP) . map (AProtoServerWithAuth SPSMP)  protocolServersP)
-        return "/xftp " + ( (AProtocolType SPXFTP) . map (AProtoServerWithAuth SPXFTP)  protocolServersP)
+        if self.protocol_type == "smp":
+            return "/smp " + protocolServersP(self.servers)
+        elif self.protocol_type == "xftp":
+            return "/xftp " + protocolServersP(self.servers)
+        else:
+            raise ValueError(f"Invalid protocol type: {self.protocol_type}")
 
 class APITestProtoServer(BaseChatCommand):
     user_id: UserId
@@ -1448,11 +1698,16 @@ class APITestProtoServer(BaseChatCommand):
         return "/_server test " + A.decimal(self.user_id) + A.space + strP(self.server)
 
 class TestProtoServer(BaseChatCommand):
-    a_proto_server_with_auth: AProtoServerWithAuth
+    server: AProtoServerWithAuth
     def format(self) -> str:
-        return "/smp test " + ( . AProtoServerWithAuth SPSMP  strP)
-        return "/xftp test " + ( . AProtoServerWithAuth SPXFTP  strP)
-        return "/ntf test " + ( . AProtoServerWithAuth SPNTF  strP)
+        if self.server.protocol == "smp":
+            return "/smp test " + strP(self.server.server)
+        elif self.server.protocol == "xftp":
+            return "/xftp test " + strP(self.server.server)
+        elif self.server.protocol == "ntf":
+            return "/ntf test " + strP(self.server.server)
+        else:
+            raise ValueError(f"Invalid protocol type: {self.server.protocol}")
 
 class APIGetServerOperators(BaseChatCommand):
     def format(self) -> str:
@@ -1466,7 +1721,7 @@ class APISetServerOperators(BaseChatCommand):
 class SetServerOperators(BaseChatCommand):
     roles: list[ServerOperatorRoles]  # NonEmpty
     def format(self) -> str:
-        return "/operators " + ( . L.fromList  operatorRolesP `A.sepBy1` A.char ',')
+        return "/operators " + ",".join(operatorRolesP(role) for role in self.roles)
 
 class APIGetUserServers(BaseChatCommand):
     user_id: UserId
@@ -1507,7 +1762,7 @@ class APISetChatItemTTL(BaseChatCommand):
         return "/_ttl " + A.decimal(self.user_id) + A.space + A.decimal(self.new_ttl)
 
 class SetChatItemTTL(BaseChatCommand):
-    new_ttl: int
+    new_ttl: ciTTL_t
     def format(self) -> str:
         return "/ttl " + ciTTL(self.new_ttl)
 
@@ -1529,7 +1784,7 @@ class APISetChatTTL(BaseChatCommand):
 
 class SetChatTTL(BaseChatCommand):
     chat_name: ChatName
-    new_ttl: Optional[int]
+    new_ttl: Optional[ciTTL_t]
     def format(self) -> str:
         return "/ttl " + chatNameP(self.chat_name) + A.space + ("default" if self.new_ttl is None else ciTTL(self.new_ttl))
 
@@ -1555,7 +1810,7 @@ class SetNetworkConfig(BaseChatCommand):
 class APISetNetworkInfo(BaseChatCommand):
     user_network_info: UserNetworkInfo
     def format(self) -> str:
-        return "/_network info " + jsonP
+        return "/_network info " + jsonP(self.user_network_info)
 
 class ReconnectAllServers(BaseChatCommand):
     def format(self) -> str:
@@ -1565,20 +1820,20 @@ class ReconnectServer(BaseChatCommand):
     user_id: UserId
     smp_server: SMPServer
     def format(self) -> str:
-        return "/reconnect " + A.decimal + A.space + strP
+        return "/reconnect " + A.decimal(self.user_id) + A.space + strP(self.smp_server)
 
 class APISetChatSettings(BaseChatCommand):
     chat_ref: ChatRef
     settings: ChatSettings
     def format(self) -> str:
-        return "/_settings " + chatRefP + A.space + jsonP
+        return "/_settings " + chatRefP(self.chat_ref) + A.space + jsonP(self.settings)
 
 class APISetMemberSettings(BaseChatCommand):
     group_id: GroupId
     member_id: GroupMemberId
-    group_member_settings: GroupMemberSettings
+    settings: GroupMemberSettings
     def format(self) -> str:
-        return "/_member settings #" + A.decimal + A.space + A.decimal + A.space + jsonP
+        return "/_member settings #" + A.decimal(self.group_id) + A.space + A.decimal(self.member_id) + A.space + jsonP(self.settings)
 
 class APIContactInfo(BaseChatCommand):
     contact_id: ContactId
@@ -1876,22 +2131,22 @@ class APIChangeConnectionUser(BaseChatCommand):
 
 class APIConnectPlan(BaseChatCommand):
     user_id: UserId
-    a_connection_link: AConnectionLink
+    connection_link: AConnectionLink
     def format(self) -> str:
-        return "/_connect plan " + A.decimal + A.space + strP
+        return "/_connect plan " + A.decimal(self.user_id) + A.space + strP(self.connection_link)
 
 class APIConnect(BaseChatCommand):
     user_id: UserId
     incognito: IncognitoEnabled
-    a_created_conn_link: Optional[ACreatedConnLink]
+    created_conn_link: Optional[ACreatedConnLink]
     def format(self) -> str:
-        return "/_connect " + A.decimal + incognitoOnOffP + A.space + connLinkP
+        return "/_connect " + A.decimal(self.user_id) + incognitoOnOffP(self.incognito) + A.space + connLinkP(self.created_conn_link)
 
 class Connect(BaseChatCommand):
     incognito: IncognitoEnabled
-    a_connection_link: Optional[AConnectionLink]
+    connection_link: Optional[AConnectionLink]
     def format(self) -> str:
-        return ("/connect" <|> "/c") + (  incognitoP + A.space + ((Just  strP) <|> A.takeTill isSpace  Nothing))
+        return "/connect" + incognitoP(self.incognito) + A.space + optional(self.connection_link, strP)
 
 class APIConnectContactViaAddress(BaseChatCommand):
     user_id: UserId
@@ -2013,10 +2268,9 @@ class ForwardLocalMessage(BaseChatCommand):
 
 class SendMessage(BaseChatCommand):
     chat_name: ChatName
-    str: str
+    msg: str
     def format(self) -> str:
-        return   chatNameP + A.space + msgTextP
-        return "/* " + ( (ChatName CTLocal "")  msgTextP)
+        return chatNameP(self.chat_name) + A.space + msgTextP(self.msg)
 
 class SendMemberContactMessage(BaseChatCommand):
     group_name: GroupName
@@ -2037,33 +2291,41 @@ class SendMessageQuote(BaseChatCommand):
     quoted_msg: str
     message: str
     def format(self) -> str:
-        return (">@" <|> "> @") +  (AMsgDirection SMDRcv)
-        return (">>@" <|> ">> @") +  (AMsgDirection SMDSnd)
+        def sendMsgQuote() -> str:
+            return displayNameP(self.contact_name) + A.space + quotedMsg(self.quoted_msg) + msgTextP(self.message)
+
+        if self.msg_dir == "rcv":
+            return ">@" + sendMsgQuote()
+        elif self.msg_dir == "snd":
+            return ">>@" + sendMsgQuote()
+        else:
+            raise ValueError(f"Invalid message direction: {self.msg_dir}")
+
 
 class SendMessageBroadcast(BaseChatCommand):
     msg_content: MsgContent
     def format(self) -> str:
-        return "/feed " + ( . MCText  msgTextP)
+        return "/feed " + msgTextP(self.msg_content)
 
 class DeleteMessage(BaseChatCommand):
     chat_name: ChatName
-    str: str
+    message: str
     def format(self) -> str:
-        return ("\\ " <|> "\\") + (  chatNameP + A.space + textP)
+        return "\\ " + chatNameP(self.chat_name) + A.space + textP(self.message)
 
 class DeleteMemberMessage(BaseChatCommand):
     group_name: GroupName
     contact_name: ContactName
-    str: str
+    deleted_message: str
     def format(self) -> str:
-        return ("\\\\ #" <|> "\\\\#") + (  displayNameP + A.space + char_('@') + displayNameP + A.space + textP)
+        return "\\\\ #" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + A.space + textP(self.deleted_message)
 
 class EditMessage(BaseChatCommand):
     chat_name: ChatName
-    edited_msg: Text
-    message: Text
+    edited_msg: str
+    message: str
     def format(self) -> str:
-        return ("! " <|> "!") + (  chatNameP + A.space + (quotedMsg <|> pure "") + msgTextP)
+        return "! " + chatNameP(self.chat_name) + A.space + quotedMsg(self.edited_msg) + msgTextP(self.message)
 
 class UpdateLiveMessage(BaseChatCommand):
     chat_name: ChatName
@@ -2131,8 +2393,8 @@ class BlockForAll(BaseChatCommand):
 
 class RemoveMembers(BaseChatCommand):
     group_name: GroupName
-    members: Set ContactName
-    with_messages: Bool
+    members: set[ContactName]
+    with_messages: bool
     def format(self) -> str:
         return ("/remove " <|> "/rm ") + char_('#') + (  displayNameP + A.space + (S.fromList  (char_('@') + displayNameP) `A.sepBy1\'` A.char ',') + (" messages=" + onOffP <|> pure False))
 
@@ -2216,12 +2478,14 @@ class ShowGroupLink(BaseChatCommand):
 
 class SendGroupMessageQuote(BaseChatCommand):
     group_name: GroupName
-    contact_name_: Optional[ContactName]
+    contact_name: Optional[ContactName]
     quoted_msg: str
     message: str
     def format(self) -> str:
-        return (">#" <|> "> #") + (  displayNameP + A.space + pure Nothing + quotedMsg + msgTextP)
-        return (">#" <|> "> #") + (  displayNameP + A.space + char_('@') + (Just  displayNameP) + A.space + quotedMsg + msgTextP)
+        if self.contact_name is None:
+            return ">#" + displayNameP(self.group_name)                                                          + A.space + quotedMsg(self.quoted_msg) + msgTextP(self.message)
+        else:
+            return ">#" + displayNameP(self.group_name) + A.space + char_('@') + displayNameP(self.contact_name) + A.space + quotedMsg(self.quoted_msg) + msgTextP(self.message)
 
 class ClearNoteFolder(BaseChatCommand):
     def format(self) -> str:
@@ -2234,7 +2498,7 @@ class LastChats(BaseChatCommand):
 
 class LastMessages(BaseChatCommand):
     chat_name: Optional[ChatName]
-    count: int
+    count: int = 10
     search: Optional[str]
     def format(self) -> str:
         if self.search is None:
@@ -2305,9 +2569,9 @@ class ReceiveFile(BaseChatCommand):
     def format(self) -> str:
         return "/freceive " + A.decimal(self.file_id) + \
             (" approved_relays=" + onOffP(self.user_approved_relays)) + \
-            optional (self.store_encrypted, lambda e: " encrypt=" + onOffP(e)) + \
-            optional (self.file_inline, lambda i: " inline=" + onOffP(i)) + \
-            optional (self.file_path, lambda p: A.space + filePath(p))
+            optional(self.store_encrypted, lambda e: " encrypt=" + onOffP(e)) + \
+            optional(self.file_inline, lambda i: " inline=" + onOffP(i)) + \
+            optional(self.file_path, lambda p: A.space + filePath(p))
 
 class SetFileToReceive(BaseChatCommand):
     file_id: FileTransferId
@@ -2349,42 +2613,66 @@ class ShowProfileImage(BaseChatCommand):
         return "/show profile image"
 
 class SetUserFeature(BaseChatCommand):
-    a_chat_feature: AChatFeature
+    feature: AChatFeature
     feature_allowed: FeatureAllowed
     def format(self) -> str:
-        return "/set voice " + ( (ACF SCFVoice)  strP)
-        return "/set calls " + ( (ACF SCFCalls)  strP)
-        return "/set delete " + ( (ACF SCFFullDelete)  strP)
+        if self.feature == "voice":
+            return "/set voice " + strP(self.feature_allowed)
+        elif self.feature == "calls":
+            return "/set calls " + strP(self.feature_allowed)
+        elif self.feature == "fullDelete":
+            return "/set delete " + strP(self.feature_allowed)
+        else:
+            raise ValueError(f"Illegal feature: {self.feature}")  # TODO
 
 class SetContactFeature(BaseChatCommand):
-    a_chat_feature: AChatFeature
+    feature: AChatFeature
     contact_name: ContactName
     feature_allowed: Optional[FeatureAllowed]
     def format(self) -> str:
-        return "/set voice @" + ( (ACF SCFVoice)  displayNameP + optional (A.space + strP))
-        return "/set calls @" + ( (ACF SCFCalls)  displayNameP + optional (A.space + strP))
-        return "/set delete @" + ( (ACF SCFFullDelete)  displayNameP + optional (A.space + strP))
+        if self.feature == "voice":
+            return "/set voice @" + displayNameP(self.contact_name) + optional(self.feature_allowed, lambda a: A.space + strP(a))
+        elif self.feature == "calls":
+            return "/set calls @" + displayNameP(self.contact_name) + optional(self.feature_allowed, lambda a: A.space + strP(a))
+        elif self.feature == "fullDelete":
+            return "/set delete @" + displayNameP(self.contact_name) + optional(self.feature_allowed, lambda a: A.space + strP(a))
+        else:
+            raise ValueError(f"Invalid feature: {self.feature}")
 
 class SetGroupFeature(BaseChatCommand):
-    a_group_feature_no_role: AGroupFeatureNoRole
+    feature: AGroupFeatureNoRole
     group_name: GroupName
-    group_feature_enabled: GroupFeatureEnabled
+    enabled: GroupFeatureEnabled
     def format(self) -> str:
-        return "/set history #" + ( (AGFNR SGFHistory)  displayNameP + (A.space + strP))
-        return "/set reactions #" + ( (AGFNR SGFReactions)  displayNameP + (A.space + strP))
-        return "/set reports #" + ( (AGFNR SGFReports)  displayNameP + _strP)
+        if self.feature == "history":
+            return "/set history #" + displayNameP(self.group_name) + A.space + strP(self.enabled)
+        elif self.feature == "reactions":
+            return "/set reactions #" + displayNameP(self.group_name) + A.space + strP(self.enabled)
+        elif self.feature == "reports":
+            return "/set reports #" + displayNameP(self.group_name) + _strP(self.enabled)
+        else:
+            raise ValueError(f"Invalid feature: {self.feature}")
 
 class SetGroupFeatureRole(BaseChatCommand):
-    a_group_feature_role: AGroupFeatureRole
+    feature: AGroupFeatureRole
     group_name: GroupName
-    group_feature_enabled: GroupFeatureEnabled
+    enabled: GroupFeatureEnabled
     role: Optional[GroupMemberRole]
     def format(self) -> str:
-        return "/set voice #" + ( (AGFR SGFVoice)  displayNameP + _strP + optional memberRole)
-        return "/set files #" + ( (AGFR SGFFiles)  displayNameP + _strP + optional memberRole)
-        return "/set delete #" + ( (AGFR SGFFullDelete)  displayNameP + _strP + optional memberRole)
-        return "/set direct #" + ( (AGFR SGFDirectMessages)  displayNameP + _strP + optional memberRole)
-        return "/set links #" + ( (AGFR SGFSimplexLinks)  displayNameP + _strP + optional memberRole)
+        # Fighting the type checker:
+        role: GroupMemberRole = self.role  # type: ignore
+        if self.feature == "voice":
+            return "/set voice #" + displayNameP(self.group_name) + _strP(self.enabled) + optional(self.role, lambda _: memberRole(role))
+        elif self.feature == "files":
+            return "/set files #" + displayNameP(self.group_name) + _strP(self.enabled) + optional(self.role, lambda _: memberRole(role))
+        elif self.feature == "fullDelete":
+            return "/set delete #" + displayNameP(self.group_name) + _strP(self.enabled) + optional(self.role, lambda _: memberRole(role))
+        elif self.feature == "directMessages":
+            return "/set direct #" + displayNameP(self.group_name) + _strP(self.enabled) + optional(self.role, lambda _: memberRole(role))
+        elif self.feature == "simplexLinks":
+            return "/set links #" + displayNameP(self.group_name) + _strP(self.enabled) + optional(self.role, lambda _: memberRole(role))
+        else:
+            raise ValueError(f"Invalid feature: {self.feature}")
 
 class SetUserTimedMessages(BaseChatCommand):
     on_or_off: bool
@@ -2413,11 +2701,13 @@ class ListRemoteHosts(BaseChatCommand):
         return "/list remote hosts"
 
 class StartRemoteHost(BaseChatCommand):
-    remote_host_id, bool: Optional[RemoteHostId, Bool]
+    remote_host_id: Optional[RemoteHostId]
+    multicast: Optional[bool]  # TODO None iff remote_host_id is None
     rc_ctrl_address: Optional[RCCtrlAddress]
-    word16: Optional[Word16]
+    port: Optional[int]
     def format(self) -> str:
-        return "/start remote host " + ("new"  Nothing <|> (Just  ((,)  A.decimal + (" multicast=" + onOffP <|> pure False)))) + optional (A.space + rcCtrlAddressP) + optional (" port=" + A.decimal)
+        assert (self.remote_host_id is None) == (self.multicast is None)
+        return "/start remote host " + ("new" if (self.remote_host_id is None or self.multicast is None) else (A.decimal(self.remote_host_id) + (" multicast=" + onOffP(self.multicast)))) + optional (A.space + rcCtrlAddressP(self.rc_ctrl_address)) + optional(self.port, lambda p: " port=" + A.decimal(p))
 
 class SwitchRemoteHost(BaseChatCommand):
     remote_host_id: Optional[RemoteHostId]
