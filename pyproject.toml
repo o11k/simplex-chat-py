@@ -14,6 +14,7 @@ license-files = ["LICENSE"]
 dependencies = [  # TODO versions
     "websockets",
     "pydantic",
+    "Deprecated",
 ]
 
 [project.urls]
