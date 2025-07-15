@@ -1,5 +1,6 @@
 import json
 from typing import Annotated, Any, Literal, Optional, Sequence, TypeAlias, TypeVar, Union, Callable
+from typing_extensions import TypeAliasType
 from abc import ABC, abstractmethod
 import sys
 
@@ -597,6 +598,7 @@ class GroupMemberAdmission(BaseModel):
     review: Optional[MemberCriteria]
 
 class GroupProfile(BaseModel):
+    # TODO only displayName and fullName used?
     displayName: GroupName
     fullName: str
     description: Optional[str]
@@ -718,7 +720,10 @@ class SRGroup(BaseModel):
     member_id: Optional[GroupMemberId]
 SendRef = Union[SRDirect, SRGroup]
 
-JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
+JSON = TypeAliasType(
+    'JSON',
+    'Union[dict[str, JSON], list[JSON], str, int, float, bool, None]',
+)
 
 ReportReason = Union[Literal["spam", "content", "community", "profile", "other"], str]
 
@@ -820,11 +825,114 @@ AGroupFeatureRole = SGroupFeature
 
 NotificationsMode = Literal["PERIODIC", "INSTANT"]
 
+ConnId = bytes
+class ConnMsgReq(BaseModel):
+    msgConnId: ConnId
+    msgDbQueueId: int
+    msgTs: Optional[UTCTime]
+
+class CAAccepted(BaseModel):
+    acceptedAt: Optional[UTCTime]
+    autoAccepted: bool
+class CARequired(BaseModel):
+    deadline: Optional[UTCTime]
+ConditionsAcceptance = Union[CAAccepted, CARequired]
+class ServerRoles(BaseModel):
+    storage: bool
+    proxy: bool
+OperatorTag = Literal["simplex", "flux"]
+DBEntityId_stored = int
+class ServerOperator(BaseModel):
+    operatorId: DBEntityId_stored
+    operatorTag: Optional[OperatorTag]
+    tradeName: str
+    legalName: Optional[str]
+    serverDomains: list[str]
+    conditionsAcceptance: ConditionsAcceptance
+    enabled: bool
+    smpRoles: ServerRoles
+    xftpRoles: ServerRoles
+
+class AUserServer(BaseModel):
+    serverId: DBEntityId_stored
+    server: ProtoServerWithAuth
+    preset: bool
+    tested: Optional[bool]
+    enabled: bool
+    deleted: bool
+class UpdatedUserOperatorServers(BaseModel):
+    operator: Optional[ServerOperator]
+    smpServers: list[AUserServer]  # TODO PSMP
+    xftpServers: list[AUserServer]  # TODO PXFTP
+
+RCSignedInvitation = str  # TODO
+
+class TMEEnableSetTTL(BaseModel):
+    ttl: int
+TimedMessagesEnabled = Union[TMEEnableSetTTL, Literal["enable", "disable"]]
+
+class ServerOperatorRoles(BaseModel):
+    operatorId: int
+    enabled: bool
+    smpRoles: ServerRoles
+    xftpRoles: ServerRoles
+
+class RemoteFile(BaseModel):
+    userId: int
+    fileId: int
+    sent: bool
+    fileSource: CryptoFile
+
+ServiceScheme = str  # TODO "simplex:" or "https://{server}"
+FileClientData = str
+ValidFileDescription = str  # TODO
+class FileDescriptionURI(BaseModel):
+    scheme: ServiceScheme
+    description: ValidFileDescription
+    clientData: Optional[FileClientData]  # JSON-encoded extensions to pass in a link
+
+class RHNew(BaseModel): pass
+class RHId(BaseModel): remoteHostId: RemoteHostId
+RHKey = Union[RHNew, RHId]
+
+ChatEvent = Any  # TODO !!!!!!
+
+
+UserNetworkType = Literal["none", "cellular", "wifi", "ethernet", "other"]
+class UserNetworkInfo(BaseModel):
+    networkType: UserNetworkType
+    online: bool
+
+SMPServer = ProtocolServer
+
+class ChatSettings(BaseModel):
+    enableNtfs: MsgFilter
+    sendRcpts: Optional[bool]
+    favorite: bool
+
+class GroupMemberSettings(BaseModel):
+    showMessages: bool
+
+ConnectionRequestUri = str  # TODO
+ConnShortLink = str  # TODO
+SConnectionMode = Literal["invitation", "contact"]
+class CLFull(BaseModel): link: ConnectionRequestUri
+class CLShort(BaseModel): link: ConnShortLink
+ConnectionLink = Union[CLFull, CLShort]
+class CreatedConnLink(BaseModel):
+    connFullLink: ConnectionRequestUri
+    connShortLink: Optional[ConnShortLink]
+class ACreatedConnLink(BaseModel):
+    mode: SConnectionMode
+    link: CreatedConnLink
+class AConnectionLink(BaseModel):
+    mode: SConnectionMode
+    link: ConnectionLink
+
 # -------------------------------------------------------------
 
 T = TypeVar("T")
 
-# What is <$?>
 class A:
     space = " "
     @staticmethod
@@ -843,18 +951,45 @@ def AtakeTill(): ...
 
 def char_(c: str) -> str: return A.char(c)  # Can also return ""
 def textP(s: str) -> str: return s
-strP_t = Union[str, bytes, list[int], DeviceToken]
+
+strP_t = Union[str, bytes, list[int], set[int], DeviceToken, int, AProtoServerWithAuth, ProtoServerWithAuth, FileDescriptionURI]
 def strP(s: strP_t) -> str:  # TODO base64?
     if isinstance(s, str):
         return s
     elif isinstance(s, bytes):
         return s.decode("utf-8")
+    elif isinstance(s, int):
+        return str(s)
     elif isinstance(s, list) and s and isinstance(s[0], int):
+        return ",".join(str(x) for x in s)
+    elif isinstance(s, set) and s and isinstance(next(iter(s)), int):
         return ",".join(str(x) for x in s)
     elif isinstance(s, DeviceToken):
         return s.push_provider + " " + s.token.decode("utf-8")
+    elif isinstance(s, AProtoServerWithAuth):
+        return strP(s.server)
+    elif isinstance(s, ProtoServerWithAuth):
+        ser = s.protoServer
+        scheme, host, port, keyHash, auth = ser.scheme, ser.host, ser.port, ser.keyHash, s.serverBasicAuth
+        return strEncodeServer(scheme, host, port, keyHash, auth)
+    elif isinstance(s, FileDescriptionURI):
+        raise NotImplementedError("strP(FileDescriptionURI)")
+        # strEncode FileDescriptionURI {scheme, description, clientData} = mconcat [strEncode scheme, "/file", "#/?", queryStr]
+        # where
+        #     queryStr = strEncode $ QSP QEscape qs
+        #     qs = ("desc", strEncode description) : maybe [] (\cd -> [("data", encodeUtf8 cd)]) clientData
+        # strP = do
+        #     scheme <- strP
+        #     _ <- "/file" <* optional (A.char '/') <* "#/?"
+        #     query <- strP
+        #     description <- queryParam "desc" query
+        #     let clientData = safeDecodeUtf8 <$> queryParamStr "data" query
+        #     pure FileDescriptionURI {scheme, description, clientData}
     else:
         raise TypeError(f"Bad input for strP: {s}")
+
+def strEncodeServer(scheme: str, host: list[TransportHost], port: str, keyHash: str, auth: Optional[BasicAuth]) -> str:
+    return scheme + "://" + keyHash + optional(auth, lambda a: ":" + a) + "@" + ",".join(host) + ":" + port
 def _strP(s: strP_t) -> str: return A.space + strP(s)
 def strP_(s: strP_t) -> str: return strP(s) + A.space
 def jsonP(obj: Union[BaseModel, Sequence[BaseModel], JSON]) -> str:
@@ -967,18 +1102,61 @@ def chatDeleteMode(mode: ChatDeleteMode):
         raise ValueError(f"Invalid delete mode: {mode.mode}_{mode.notify}")
     return " "+mode.mode + optional(mode.notify, lambda n: " notify=" + onOffP(n))
 
-def connMsgsP(): ...
+def connMsgP(msg: ConnMsgReq) -> str:
+    if msg.msgTs is None:
+        raise TypeError(f"Invalid ConnMsgReq ts=None")  # TODO enforce in type?
+    return \
+        strP(msg.msgConnId) + A.char(':') + \
+        strP(msg.msgDbQueueId) + A.char(':') + \
+        strP(msg.msgTs)
+def connMsgsP(msgs: list[ConnMsgReq]) -> str: return ",".join(connMsgP(m) for m in msgs)
 def memberRole(role: GroupMemberRole) -> str: return " " + role
-def protocolServersP(): ...
-def operatorRolesP(): ...
+def protocolServersP(servers: list[AProtoServerWithAuth]) -> str:
+    return " ".join(strP(server) for server in servers)
+def srvRolesP(roles: ServerRoles) -> str:
+    if   not roles.storage and not roles.proxy:
+        return "off"
+    elif not roles.storage and     roles.proxy:
+        return "proxy"
+    elif     roles.storage and not roles.proxy:
+        return "storage"
+    elif     roles.storage and     roles.proxy:
+        return "on"
+    else:
+        raise Exception("Unreachable")
+
+def operatorRolesP(roles: ServerOperatorRoles) -> str:
+    return \
+        A.decimal(roles.operatorId) + \
+        A.char(':') + onOffP(roles.enabled) + \
+        ":smp=" + srvRolesP(roles.smpRoles) + \
+        ":xftp=" + srvRolesP(roles.xftpRoles)
+
 def ciTTLDecimal(ttl: Optional[int]) -> str: return "default" if ttl is None else A.decimal(ttl)
 def ciTTL(ttl: ciTTL_t) -> str: return "none" if ttl is None else ttl
-def netCfgP(): ...
+def netCfgP(cfg: SimpleNetCfg) -> str:
+    return \
+        "socks=" + ("off" if cfg.socksProxy is None else "on" + strP(cfg.socksProxy)) + \
+        " socks-mode=" + strP(cfg.socksMode) + \
+        " host-mode=" + cfg.hostMode + \
+        (" required-host-mode" if cfg.requiredHostMode else "") + \
+        optional(cfg.smpProxyMode, lambda m: " smp-proxy=" + strP(m)) + \
+        optional(cfg.smpProxyFallback, lambda f: " smp-proxy-fallback=" + strP(f)) + \
+        " smp-web-port-servers=" + strP(cfg.smpWebPortServers) + \
+        optional(cfg.tcpTimeout, lambda t: " timeout=" + A.decimal(t)) + \
+        " log=" + onOffP(cfg.logTLSErrors)
+
 def verifyCodeP(code: VerifyCode) -> str:
     if " " in code:
         raise ValueError(f"Verify code can't contain a space: {code}")
     return code
-def groupProfile(): ...
+def groupProfile(profile: GroupProfile) -> str:
+    return profileNames(profile.displayName, profile.fullName)
+def profileNames(displayName: str, fullName: str) -> str:
+    return displayNameP(displayName) + fullNameP(fullName)
+def fullNameP(fullName: str) -> str:
+    return A.space + textP(fullName)
+
 def connLinkP(): ...
 def cryptoFileP(file: CryptoFile) -> str:
       return optional(file.cryptoArgs, lambda a: " key=" + strP(a.fileKey) + A.space + " nonce=" + strP(a.fileNonce)) \
@@ -1002,6 +1180,22 @@ def timedTTLOnOffP(ttl: Optional[int]) -> str:
         return "on" + A.space + timedTTLP(ttl)
     else:
         return "off"
+def timedMessagesEnabledP(tme: TimedMessagesEnabled) -> str:
+    if isinstance(tme, TMEEnableSetTTL):
+        return "yes" + A.space + timedTTLP(tme.ttl)
+    elif tme == "enable":
+        return "yes"
+    elif tme == "disable":
+        return "no"
+    else:
+        raise ValueError(f"Invalild TimedMessagesEnabled: {tme}")
+
+def reactionP(reaction: MsgReaction) -> str:
+    if isinstance(reaction, MRUnknown):
+        raise TypeError(f"Unsupported MRUnknown: {reaction}")
+    return reaction.emoji
+
+def imageP(img: ImageData) -> str: return img
 
 # -------------------------------------------------------------
 
@@ -1615,7 +1809,7 @@ class APIRemoveMembers(BaseChatCommand):
     member_ids: set[GroupMemberId]
     with_messages: bool
     def format(self) -> str:
-        return "/_remove #" + A.decimal + _strP + (" messages=" + onOffP <|> pure False)
+        return "/_remove #" + A.decimal(self.group_id) + _strP(self.member_ids) + " messages=" + onOffP(self.with_messages)
 
 class APILeaveGroup(BaseChatCommand):
     group_id: GroupId
@@ -2396,7 +2590,7 @@ class RemoveMembers(BaseChatCommand):
     members: set[ContactName]
     with_messages: bool
     def format(self) -> str:
-        return ("/remove " <|> "/rm ") + char_('#') + (  displayNameP + A.space + (S.fromList  (char_('@') + displayNameP) `A.sepBy1\'` A.char ',') + (" messages=" + onOffP <|> pure False))
+        return "/remove " + char_('#') + displayNameP(self.group_name) + A.space + ','.join(char_('@') + displayNameP(m) for m in self.members) + " messages=" + onOffP(self.with_messages)
 
 class LeaveGroup(BaseChatCommand):
     group_name: GroupName
@@ -2717,7 +2911,13 @@ class SwitchRemoteHost(BaseChatCommand):
 class StopRemoteHost(BaseChatCommand):
     rh_key: RHKey
     def format(self) -> str:
-        return "/stop remote host " + ("new"  RHNew <|> RHId  A.decimal)
+        if isinstance(self.rh_key, RHNew):
+            key_part = "new"
+        elif isinstance(self.rh_key, RHId):
+            key_part = A.decimal(self.rh_key.remoteHostId)
+        else:
+            raise TypeError(f"Invalid RHKey: {self.rh_key}")
+        return "/stop remote host " + key_part
 
 class DeleteRemoteHost(BaseChatCommand):
     remote_host_id: RemoteHostId
